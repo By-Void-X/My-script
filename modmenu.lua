@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Fixed Normal Speed Noclip)
-  Fitur: True Noclip (Kecepatan Normal), Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Animation Preserved Noclip)
+  Fitur: True Noclip (Anti-Stuck), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -116,10 +116,9 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. TRUE NOCLIP (Paksa Tembus Kecepatan Normal)
+-- A. TRUE NOCLIP (Anti-Stuck & Animasi Tetap Jalan)
 local wallHackActive = false
 local noclipConnection
-local originalWalkSpeed = 16
 
 CreateToggle("True Noclip (Normal Speed)", function(state)
     wallHackActive = state
@@ -130,14 +129,10 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
     if not hrp or not humanoid then return end
 
     if wallHackActive then
-        -- Simpan kecepatan asli dan bekukan pergerakan fisika bawaan
-        originalWalkSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = 0 
-        
-        noclipConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        noclipConnection = RunService.Heartbeat:Connect(function()
             if not wallHackActive or not char.Parent then return end
             
-            -- Paksa matikan tabrakan setiap frame
+            -- Matikan tabrakan terus menerus
             for _, part in pairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
@@ -145,18 +140,22 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
                 end
             end
             
-            -- Gerakkan karakter secara manual dengan kecepatan asli
             local moveDir = humanoid.MoveDirection
             if moveDir.Magnitude > 0 then
-                hrp.CFrame = hrp.CFrame + (moveDir * originalWalkSpeed * deltaTime)
+                -- Deteksi jika karakter tersangkut (kecepatan mendekati 0 padahal lagi jalan)
+                local velocity = hrp.AssemblyLinearVelocity
+                local horizVel = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+                
+                if horizVel < 2 then
+                    -- Tendang karakter menembus dinding
+                    hrp.CFrame = hrp.CFrame + (moveDir * 0.5)
+                    -- Paksa status Running agar animasi lari tetap dimainkan
+                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                end
             end
         end)
     else
-        -- Kembalikan ke normal saat dimatikan
         if noclipConnection then noclipConnection:Disconnect() end
-        if humanoid then
-            humanoid.WalkSpeed = originalWalkSpeed
-        end
     end
 end)
 
