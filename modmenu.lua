@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Animation Preserved Noclip)
-  Fitur: True Noclip (Anti-Stuck), Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Custom Walk Speed)
+  Fitur: Walk Speed Slider, True Noclip, Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -87,6 +87,7 @@ UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
+-- Fungsi Pembuat Tombol Toggle
 local function CreateToggle(name, callback)
     local Button = Instance.new("TextButton")
     Button.Parent = ScrollingFrame
@@ -112,11 +113,78 @@ local function CreateToggle(name, callback)
     end)
 end
 
+-- Fungsi Pembuat Slider
+local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
+    local SliderFrame = Instance.new("Frame")
+    SliderFrame.Parent = ScrollingFrame
+    SliderFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    SliderFrame.Size = UDim2.new(0, 220, 0, 50)
+    Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 5)
+
+    local SliderLabel = Instance.new("TextLabel")
+    SliderLabel.Parent = SliderFrame
+    SliderLabel.BackgroundTransparency = 1
+    SliderLabel.Size = UDim2.new(1, 0, 0, 20)
+    SliderLabel.Font = Enum.Font.GothamSemibold
+    SliderLabel.Text = name .. ": " .. defaultVal
+    SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SliderLabel.TextSize = 12
+
+    local SliderBtn = Instance.new("TextButton")
+    SliderBtn.Parent = SliderFrame
+    SliderBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    SliderBtn.Position = UDim2.new(0, 10, 0, 25)
+    SliderBtn.Size = UDim2.new(0, 200, 0, 15)
+    SliderBtn.Text = ""
+    Instance.new("UICorner", SliderBtn).CornerRadius = UDim.new(1, 0)
+
+    local isDragging = false
+    local currentVal = defaultVal
+    
+    SliderBtn.MouseButton1Down:Connect(function() isDragging = true end)
+    UserInputService.InputEnded:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            isDragging = false 
+        end 
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local mouseX = UserInputService:GetMouseLocation().X
+            local sliderX = SliderBtn.AbsolutePosition.X
+            local sliderW = SliderBtn.AbsoluteSize.X
+            
+            local percent = math.clamp((mouseX - sliderX) / sliderW, 0, 1)
+            currentVal = math.floor(percent * (maxVal - minVal)) + minVal
+            SliderLabel.Text = name .. ": " .. currentVal
+            callback(currentVal)
+        end
+    end)
+end
+
 -- ==========================================
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. TRUE NOCLIP (Anti-Stuck & Animasi Tetap Jalan)
+-- A. WALK SPEED (Kecepatan Jalan)
+local currentWalkSpeed = 16
+CreateSlider("Walk Speed", 16, 200, 16, function(val)
+    currentWalkSpeed = val
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = val
+    end
+end)
+
+-- Update WalkSpeed saat respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    if char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = currentWalkSpeed
+    end
+end)
+
+-- B. TRUE NOCLIP (Anti-Stuck & Animasi Tetap Jalan)
 local wallHackActive = false
 local noclipConnection
 
@@ -132,7 +200,6 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
         noclipConnection = RunService.Heartbeat:Connect(function()
             if not wallHackActive or not char.Parent then return end
             
-            -- Matikan tabrakan terus menerus
             for _, part in pairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
@@ -142,14 +209,13 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
             
             local moveDir = humanoid.MoveDirection
             if moveDir.Magnitude > 0 then
-                -- Deteksi jika karakter tersangkut (kecepatan mendekati 0 padahal lagi jalan)
                 local velocity = hrp.AssemblyLinearVelocity
                 local horizVel = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
                 
-                if horizVel < 2 then
-                    -- Tendang karakter menembus dinding
-                    hrp.CFrame = hrp.CFrame + (moveDir * 0.5)
-                    -- Paksa status Running agar animasi lari tetap dimainkan
+                -- Treshold disesuaikan dengan kecepatan jalan (agar tidak nyangkut saat speed tinggi)
+                local threshold = currentWalkSpeed * 0.5
+                if horizVel < threshold then
+                    hrp.CFrame = hrp.CFrame + (moveDir * 1.5)
                     humanoid:ChangeState(Enum.HumanoidStateType.Running)
                 end
             end
@@ -159,53 +225,14 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
     end
 end)
 
--- B. FLY SPEED (Slider & Kontrol)
+-- C. FLY SPEED (Slider & Kontrol)
 local flyActive = false
 local flyConnection
 local bodyVelocity
 local flySpeed = 50
 
-local SliderFrame = Instance.new("Frame")
-SliderFrame.Parent = ScrollingFrame
-SliderFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-SliderFrame.Size = UDim2.new(0, 220, 0, 50)
-Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 5)
-
-local SliderLabel = Instance.new("TextLabel")
-SliderLabel.Parent = SliderFrame
-SliderLabel.BackgroundTransparency = 1
-SliderLabel.Size = UDim2.new(1, 0, 0, 20)
-SliderLabel.Font = Enum.Font.GothamSemibold
-SliderLabel.Text = "Fly Speed: " .. flySpeed
-SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-SliderLabel.TextSize = 12
-
-local SliderBtn = Instance.new("TextButton")
-SliderBtn.Parent = SliderFrame
-SliderBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-SliderBtn.Position = UDim2.new(0, 10, 0, 25)
-SliderBtn.Size = UDim2.new(0, 200, 0, 15)
-SliderBtn.Text = ""
-Instance.new("UICorner", SliderBtn).CornerRadius = UDim.new(1, 0)
-
-local isDragging = false
-SliderBtn.MouseButton1Down:Connect(function() isDragging = true end)
-UserInputService.InputEnded:Connect(function(input) 
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        isDragging = false 
-    end 
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if isDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-        local mouseX = UserInputService:GetMouseLocation().X
-        local sliderX = SliderBtn.AbsolutePosition.X
-        local sliderW = SliderBtn.AbsoluteSize.X
-        
-        local percent = math.clamp((mouseX - sliderX) / sliderW, 0, 1)
-        flySpeed = math.floor(percent * 150) + 10
-        SliderLabel.Text = "Fly Speed: " .. flySpeed
-    end
+CreateSlider("Fly Speed", 10, 160, 50, function(val)
+    flySpeed = val
 end)
 
 CreateToggle("Fly (Geser Kamera)", function(state)
@@ -239,7 +266,7 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
--- C. MULTIPLE JUMP
+-- D. MULTIPLE JUMP
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
@@ -266,7 +293,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- D. ESP (Highlight Player)
+-- E. ESP (Highlight Player)
 local espActive = false
 local espObjects = {}
 
