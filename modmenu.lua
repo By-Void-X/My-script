@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Mobile Optimized)
-  Fitur: Wall Hack (Anti-Fall), Fly Speed Slider, Multiple Jump, ESP, Toggle UI
+  FIXTURE_TEMPLATE: Roblox Mod Menu (True Wall Hack)
+  Fitur: True Wall Hack, Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -16,7 +16,6 @@ ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.Name = "ModMenu_GUI"
 ScreenGui.ResetOnSpawn = false
 
--- Tombol Buka Menu
 local OpenIcon = Instance.new("TextButton")
 OpenIcon.Parent = ScreenGui
 OpenIcon.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
@@ -30,7 +29,6 @@ OpenIcon.Visible = false
 Instance.new("UICorner", OpenIcon).CornerRadius = UDim.new(1, 0)
 Instance.new("UIStroke", OpenIcon).Color = Color3.fromRGB(255, 255, 255)
 
--- Frame Utama
 local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -118,29 +116,37 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. WALL HACK (Hanya Dinding yang Tembus, Lantai Tetap Padat)
+-- A. TRUE WALL HACK (Paksa Tembus Segala Blok)
 local wallHackActive = false
-CreateToggle("Wall Hack (Tembus Dinding)", function(state)
+CreateToggle("True Wall Hack", function(state)
     wallHackActive = state
+    local char = LocalPlayer.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            -- Matikan tabrakan di seluruh tubuh
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+    end
 end)
 
+-- Loop pemaksa agar karakter tidak tersangkut (bypass physics)
 RunService.Stepped:Connect(function()
     if wallHackActive then
         local char = LocalPlayer.Character
         if char then
             local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                -- Hanya matikan tabrakan pada part tubuh bagian atas (dada/kepala/lengan)
-                -- Biarkan bagian kaki (HumanoidRootPart) atau lantai tetap solid agar tidak jatuh
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        part.CanCollide = false
-                    end
-                end
+            local humanoid = char:FindFirstChild("Humanoid")
+            
+            if hrp and humanoid then
+                -- Paksa status agar karakter dianggap sedang melayang (tidak menabrak)
+                humanoid:ChangeState(Enum.HumanoidStateType.Physics) 
                 
-                -- Tambahan: Tempatkan karakter sedikit ke atas agar tidak tersangkut di dalam tembok
-                if hrp.CanCollide == false then
-                    hrp.CanCollide = true
+                -- Paksa agar tidak jatuh menembus map (kecuali kamu mau tembus ke void)
+                if hrp.Velocity.Y < -100 then
+                    hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
                 end
             end
         end
@@ -151,9 +157,8 @@ end)
 local flyActive = false
 local flyConnection
 local bodyVelocity
-local flySpeed = 50 -- Default speed
+local flySpeed = 50
 
--- UI Slider Fly Speed
 local SliderFrame = Instance.new("Frame")
 SliderFrame.Parent = ScrollingFrame
 SliderFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
@@ -193,7 +198,7 @@ UserInputService.InputChanged:Connect(function(input)
         local sliderW = SliderBtn.AbsoluteSize.X
         
         local percent = math.clamp((mouseX - sliderX) / sliderW, 0, 1)
-        flySpeed = math.floor(percent * 150) + 10 -- Range 10 sampai 160
+        flySpeed = math.floor(percent * 150) + 10
         SliderLabel.Text = "Fly Speed: " .. flySpeed
     end
 end)
@@ -217,7 +222,6 @@ CreateToggle("Fly (Geser Kamera)", function(state)
             
             local moveDir = camera.CFrame.LookVector
             
-            -- Jika layar disentuh, terbang naik ke atas
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
                 moveDir = moveDir + Vector3.new(0, 1, 0)
             end
@@ -257,7 +261,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- D. ESP
+-- D. ESP (Highlight Player)
 local espActive = false
 local espObjects = {}
 
