@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (True Wall Hack)
-  Fitur: True Wall Hack, Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Reverted Wall Hack)
+  Fitur: Wall Hack (CanCollide), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -116,39 +116,26 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. TRUE WALL HACK (Paksa Tembus Segala Blok)
+-- A. WALL HACK (Sesuai Versi Awal yang Berfungsi)
 local wallHackActive = false
-CreateToggle("True Wall Hack", function(state)
+CreateToggle("Wall Hack (Tembus)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if char then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            -- Matikan tabrakan di seluruh tubuh
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = not state -- Jika ON, tabrakan dimatikan
             end
         end
     end
 end)
 
--- Loop pemaksa agar karakter tidak tersangkut (bypass physics)
-RunService.Stepped:Connect(function()
+-- Update saat karakter respawn agar tetap tembus
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
     if wallHackActive then
-        local char = LocalPlayer.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local humanoid = char:FindFirstChild("Humanoid")
-            
-            if hrp and humanoid then
-                -- Paksa status agar karakter dianggap sedang melayang (tidak menabrak)
-                humanoid:ChangeState(Enum.HumanoidStateType.Physics) 
-                
-                -- Paksa agar tidak jatuh menembus map (kecuali kamu mau tembus ke void)
-                if hrp.Velocity.Y < -100 then
-                    hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
-                end
-            end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
 end)
@@ -182,7 +169,6 @@ SliderBtn.Size = UDim2.new(0, 200, 0, 15)
 SliderBtn.Text = ""
 Instance.new("UICorner", SliderBtn).CornerRadius = UDim.new(1, 0)
 
--- Logika Geser Slider
 local isDragging = false
 SliderBtn.MouseButton1Down:Connect(function() isDragging = true end)
 UserInputService.InputEnded:Connect(function(input) 
