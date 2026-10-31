@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (True Noclip)
-  Fitur: True Noclip (Tembus Semua), Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Force Noclip)
+  Fitur: True Noclip (Paksa Tembus), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -116,39 +116,36 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. TRUE NOCLIP (Tembus Semua Block & Pembatas)
+-- A. TRUE NOCLIP (Paksa Tembus Segala Blok)
 local wallHackActive = false
-CreateToggle("True Noclip (All Blocks)", function(state)
+CreateToggle("True Noclip (All)", function(state)
     wallHackActive = state
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = not state
-            end
-        end
-    end
 end)
 
--- Loop untuk memaksa tembus (termasuk Anchor/Visual Block)
-RunService.Stepped:Connect(function()
+-- Loop pemaksa menggunakan Heartbeat
+RunService.Heartbeat:Connect(function()
     if wallHackActive then
         local char = LocalPlayer.Character
         if char then
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char:FindFirstChild("Humanoid")
+            
+            if hrp and humanoid then
+                -- 1. Matikan tabrakan & deteksi raycast pada karakter
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                        part.CanQuery = false 
+                    end
+                end
+                
+                -- 2. Dorong paksa CFrame jika kamu menekan joystick ke arah dinding
+                local moveDir = humanoid.MoveDirection
+                if moveDir.Magnitude > 0 then
+                    -- Menggeser karakter sejauh 2 studs per frame ke arah gerakan
+                    hrp.CFrame = hrp.CFrame + (moveDir * 2)
                 end
             end
-        end
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1)
-    if wallHackActive then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
 end)
