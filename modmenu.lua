@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Force Noclip)
-  Fitur: True Noclip (Paksa Tembus), Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Normal Speed Noclip)
+  Fitur: True Noclip (Kecepatan Normal), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -116,14 +116,14 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. TRUE NOCLIP (Paksa Tembus Segala Blok)
+-- A. TRUE NOCLIP (Paksa Tembus Kecepatan Normal)
 local wallHackActive = false
 CreateToggle("True Noclip (All)", function(state)
     wallHackActive = state
 end)
 
 -- Loop pemaksa menggunakan Heartbeat
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(deltaTime)
     if wallHackActive then
         local char = LocalPlayer.Character
         if char then
@@ -131,7 +131,7 @@ RunService.Heartbeat:Connect(function()
             local humanoid = char:FindFirstChild("Humanoid")
             
             if hrp and humanoid then
-                -- 1. Matikan tabrakan & deteksi raycast pada karakter
+                -- Matikan tabrakan & deteksi raycast
                 for _, part in pairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -139,11 +139,12 @@ RunService.Heartbeat:Connect(function()
                     end
                 end
                 
-                -- 2. Dorong paksa CFrame jika kamu menekan joystick ke arah dinding
+                -- Paksa jalan tembus dengan kecepatan normal (sesuai WalkSpeed)
                 local moveDir = humanoid.MoveDirection
                 if moveDir.Magnitude > 0 then
-                    -- Menggeser karakter sejauh 2 studs per frame ke arah gerakan
-                    hrp.CFrame = hrp.CFrame + (moveDir * 2)
+                    -- Menggunakan humanoid.WalkSpeed (biasanya 16) dikali deltaTime
+                    local currentSpeed = humanoid.WalkSpeed
+                    hrp.CFrame = hrp.CFrame + (moveDir * currentSpeed * deltaTime)
                 end
             end
         end
@@ -230,7 +231,7 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
--- C. MULTIPLE JUMP (Tidak diubah)
+-- C. MULTIPLE JUMP
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
