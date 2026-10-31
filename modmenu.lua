@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Reverted Wall Hack)
-  Fitur: Wall Hack (CanCollide), Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (True Noclip)
+  Fitur: True Noclip (Tembus Semua), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -116,21 +116,34 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. WALL HACK (Sesuai Versi Awal yang Berfungsi)
+-- A. TRUE NOCLIP (Tembus Semua Block & Pembatas)
 local wallHackActive = false
-CreateToggle("Wall Hack (Tembus)", function(state)
+CreateToggle("True Noclip (All Blocks)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if char then
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.CanCollide = not state -- Jika ON, tabrakan dimatikan
+                part.CanCollide = not state
             end
         end
     end
 end)
 
--- Update saat karakter respawn agar tetap tembus
+-- Loop untuk memaksa tembus (termasuk Anchor/Visual Block)
+RunService.Stepped:Connect(function()
+    if wallHackActive then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     if wallHackActive then
