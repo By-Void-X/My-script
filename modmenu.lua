@@ -1,5 +1,5 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Normal Speed Noclip)
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Fixed Normal Speed Noclip)
   Fitur: True Noclip (Kecepatan Normal), Fly Speed Slider, Multiple Jump, ESP
 ]]
 
@@ -118,35 +118,44 @@ end
 
 -- A. TRUE NOCLIP (Paksa Tembus Kecepatan Normal)
 local wallHackActive = false
-CreateToggle("True Noclip (All)", function(state)
-    wallHackActive = state
-end)
+local noclipConnection
+local originalWalkSpeed = 16
 
--- Loop pemaksa menggunakan Heartbeat
-RunService.Heartbeat:Connect(function(deltaTime)
+CreateToggle("True Noclip (Normal Speed)", function(state)
+    wallHackActive = state
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not hrp or not humanoid then return end
+
     if wallHackActive then
-        local char = LocalPlayer.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local humanoid = char:FindFirstChild("Humanoid")
+        -- Simpan kecepatan asli dan bekukan pergerakan fisika bawaan
+        originalWalkSpeed = humanoid.WalkSpeed
+        humanoid.WalkSpeed = 0 
+        
+        noclipConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            if not wallHackActive or not char.Parent then return end
             
-            if hrp and humanoid then
-                -- Matikan tabrakan & deteksi raycast
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                        part.CanQuery = false 
-                    end
-                end
-                
-                -- Paksa jalan tembus dengan kecepatan normal (sesuai WalkSpeed)
-                local moveDir = humanoid.MoveDirection
-                if moveDir.Magnitude > 0 then
-                    -- Menggunakan humanoid.WalkSpeed (biasanya 16) dikali deltaTime
-                    local currentSpeed = humanoid.WalkSpeed
-                    hrp.CFrame = hrp.CFrame + (moveDir * currentSpeed * deltaTime)
+            -- Paksa matikan tabrakan setiap frame
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                    part.CanQuery = false 
                 end
             end
+            
+            -- Gerakkan karakter secara manual dengan kecepatan asli
+            local moveDir = humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                hrp.CFrame = hrp.CFrame + (moveDir * originalWalkSpeed * deltaTime)
+            end
+        end)
+    else
+        -- Kembalikan ke normal saat dimatikan
+        if noclipConnection then noclipConnection:Disconnect() end
+        if humanoid then
+            humanoid.WalkSpeed = originalWalkSpeed
         end
     end
 end)
