@@ -1,6 +1,6 @@
 --[[
   FIXTURE_TEMPLATE: Roblox Mod Menu (Mobile Optimized)
-  Fitur: Wall Hack (Tembus), Fly Kamera, Fly Hold, Multiple Jump, ESP
+  Fitur: Wall Hack, Fly (Kamera), Fly Speed Slider, Multiple Jump, ESP, Toggle UI
   Environment: Client-Side Executor
 ]]
 
@@ -10,38 +10,40 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- 1. SETUP UI
+-- 1. SETUP UI & ICON TOGGLE
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local UICorner = Instance.new("UICorner")
-local Title = Instance.new("TextLabel")
-local ScrollingFrame = Instance.new("ScrollingFrame")
-local UIListLayout = Instance.new("UIListLayout")
-local ToggleBtn = Instance.new("TextButton") -- Tombol buka/tutup menu
-
--- Tombol Kecil untuk buka menu (biar gak makan layar)
-ToggleBtn.Parent = game:GetService("CoreGui")
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ToggleBtn.Position = UDim2.new(0, 10, 0, 10)
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.Text = "MENU"
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.TextSize = 12
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
-
 ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.Name = "ModMenu_GUI"
+ScreenGui.ResetOnSpawn = false
 
+-- Tombol Ikon Kecil untuk Buka Menu
+local OpenIcon = Instance.new("TextButton")
+OpenIcon.Parent = ScreenGui
+OpenIcon.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+OpenIcon.Position = UDim2.new(0, 10, 0, 10)
+OpenIcon.Size = UDim2.new(0, 45, 0, 45)
+OpenIcon.Font = Enum.Font.GothamBold
+OpenIcon.Text = "M"
+OpenIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
+OpenIcon.TextSize = 20
+OpenIcon.Visible = false
+Instance.new("UICorner", OpenIcon).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", OpenIcon).Color = Color3.fromRGB(255, 255, 255)
+
+-- Frame Utama Menu
+local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -175) -- Posisi di tengah
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -175)
 MainFrame.Size = UDim2.new(0, 250, 0, 350)
 MainFrame.Active = true
 MainFrame.Draggable = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(60, 60, 60)
 
+-- Judul Menu
+local Title = Instance.new("TextLabel")
 Title.Parent = MainFrame
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 Title.Size = UDim2.new(1, 0, 0, 40)
@@ -49,26 +51,47 @@ Title.Font = Enum.Font.GothamBold
 Title.Text = "Mobile Mod Menu"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Position = UDim2.new(0, 15, 0, 0)
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 
+-- Tombol Tutup (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = MainFrame
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseBtn.Position = UDim2.new(1, -35, 0, 10)
+CloseBtn.Size = UDim2.new(0, 25, 0, 25)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 14
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    OpenIcon.Visible = true
+end)
+
+OpenIcon.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    OpenIcon.Visible = false
+end)
+
+-- Area Scroll
+local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Parent = MainFrame
 ScrollingFrame.BackgroundTransparency = 1
 ScrollingFrame.Size = UDim2.new(1, 0, 1, -45)
 ScrollingFrame.Position = UDim2.new(0, 0, 0, 45)
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollingFrame.ScrollBarThickness = 4
 
+local UIListLayout = Instance.new("UIListLayout")
 UIListLayout.Parent = ScrollingFrame
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
--- Fungsi Toggle Menu
-local menuOpen = true
-ToggleBtn.MouseButton1Click:Connect(function()
-    menuOpen = not menuOpen
-    MainFrame.Visible = menuOpen
-end)
 
 local function CreateToggle(name, callback)
     local Button = Instance.new("TextButton")
@@ -96,63 +119,30 @@ local function CreateToggle(name, callback)
 end
 
 -- ==========================================
--- 2. LOGIKA FITUR (MOBILE OPTIMIZED)
+-- 2. LOGIKA FITUR
 -- ==========================================
 
 -- A. WALL HACK (Tembus Dinding)
 local wallHackActive = false
 CreateToggle("Wall Hack (Tembus)", function(state)
     wallHackActive = state
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = not state -- Jika ON, tabrakan dimatikan
-            end
-        end
-    end
 end)
--- Update saat karakter respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1)
+
+-- Loop agar Wall Hack selalu aktif tanpa perlu di-ON/OFF manual
+RunService.Heartbeat:Connect(function()
     if wallHackActive then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
         end
     end
 end)
 
--- B. FLY (Bisa dikontrol di HP dengan menggeser layar / kamera)
-local flyActive = false
-local flyConnection
-local flySpeed = 2
-
-CreateToggle("Fly (Geser Kamera)", function(state)
-    flyActive = state
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if flyActive then
-        local camera = workspace.CurrentCamera
-        flyConnection = RunService.RenderStepped:Connect(function()
-            if not flyActive or not hrp.Parent then return end
-            -- Terbang mengikuti arah kamera secara perlahan
-            local moveDir = camera.CFrame.LookVector
-            hrp.CFrame = hrp.CFrame + (moveDir * flySpeed)
-            
-            -- Opsional: Kalau layar disentuh, naik ke atas
-            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
-                hrp.CFrame = hrp.CFrame + Vector3.new(0, flySpeed, 0)
-            end
-        end)
-    else
-        if flyConnection then flyConnection:Disconnect() end
-    end
-end)
-
--- C. MULTIPLE JUMP (Spam Lompat di Udara)
+-- B. MULTIPLE JUMP (Tidak diubah sesuai permintaan)
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
@@ -167,7 +157,6 @@ UserInputService.JumpRequest:Connect(function()
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("Humanoid") then
             local humanoid = char.Humanoid
-            -- Reset hitungan jika menyentuh tanah
             if humanoid:GetState() == Enum.HumanoidStateType.Landed or humanoid:GetState() == Enum.HumanoidStateType.Running then
                 jumpCount = 0
             end
@@ -180,12 +169,93 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- D. FLY HOLD (Tahan Tombol Layar / Spasi untuk Naik)
+-- C. FLY (Geser Kamera / Kontrol Manual)
+local flyActive = false
+local flyConnection
+local flySpeed = 50
+local bodyVelocity
+
+CreateToggle("Fly (Geser Kamera)", function(state)
+    flyActive = state
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if flyActive then
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Parent = hrp
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+
+        local camera = workspace.CurrentCamera
+        flyConnection = RunService.RenderStepped:Connect(function()
+            if not flyActive or not bodyVelocity or not bodyVelocity.Parent then return end
+            
+            local moveDir = Vector3.new(0, 0, 0)
+            -- Terbang mengikuti arah pandangan kamera
+            moveDir = camera.CFrame.LookVector
+            
+            -- Jika layar disentuh, naik ke atas
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
+                moveDir = moveDir + Vector3.new(0, 1, 0)
+            end
+            
+            bodyVelocity.Velocity = moveDir * (flySpeed / 2)
+        end)
+    else
+        if flyConnection then flyConnection:Disconnect() end
+        if bodyVelocity then bodyVelocity:Destroy() end
+    end
+end)
+
+-- D. FLY SPEED / HOLD (Slider Kecepatan)
 local holdActive = false
 local holdConnection
-local holdSpeed = 0.5
+local currentHoldSpeed = 1
 
-CreateToggle("Fly Hold (Naik)", function(state)
+-- UI Slider Sederhana
+local SliderFrame = Instance.new("Frame")
+SliderFrame.Parent = ScrollingFrame
+SliderFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+SliderFrame.Size = UDim2.new(0, 220, 0, 50)
+Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 5)
+
+local SliderLabel = Instance.new("TextLabel")
+SliderLabel.Parent = SliderFrame
+SliderLabel.BackgroundTransparency = 1
+SliderLabel.Size = UDim2.new(1, 0, 0, 20)
+SliderLabel.Font = Enum.Font.GothamSemibold
+SliderLabel.Text = "Fly Speed: 1"
+SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+SliderLabel.TextSize = 12
+
+local SliderBtn = Instance.new("TextButton")
+SliderBtn.Parent = SliderFrame
+SliderBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+SliderBtn.Position = UDim2.new(0, 10, 0, 25)
+SliderBtn.Size = UDim2.new(0, 200, 0, 15)
+SliderBtn.Text = ""
+Instance.new("UICorner", SliderBtn).CornerRadius = UDim.new(1, 0)
+
+-- Logika Slider
+local isDragging = false
+SliderBtn.MouseButton1Down:Connect(function() isDragging = true end)
+UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then isDragging = false end end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local mousePos = UserInputService:GetMouseLocation()
+        local sliderPos = SliderBtn.AbsolutePosition.X
+        local sliderWidth = SliderBtn.AbsoluteSize.X
+        local percentage = math.clamp((mousePos.X - sliderPos) / sliderWidth, 0, 1)
+        
+        currentHoldSpeed = math.floor(percentage * 10) + 1 -- Nilai 1 sampai 10
+        SliderLabel.Text = "Fly Speed: " .. currentHoldSpeed
+    end
+end)
+
+CreateToggle("Fly Hold (Naik/Turun)", function(state)
     holdActive = state
     local char = LocalPlayer.Character
     if not char then return end
@@ -193,15 +263,29 @@ CreateToggle("Fly Hold (Naik)", function(state)
     if not hrp then return end
 
     if holdActive then
+        if not bodyVelocity then
+            bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Parent = hrp
+            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        end
+
         holdConnection = RunService.Heartbeat:Connect(function()
-            if not holdActive or not hrp.Parent then return end
-            -- Jika layar disentuh atau spasi ditekan, karakter naik
-            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                hrp.CFrame = hrp.CFrame + Vector3.new(0, holdSpeed, 0)
+            if not holdActive or not bodyVelocity or not bodyVelocity.Parent then return end
+            
+            local moveDir = Vector3.new(0, 0, 0)
+            -- Naik jika layar disentuh
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
+                moveDir = Vector3.new(0, 1, 0)
+            -- Turun jika kamera melihat ke bawah
+            elseif workspace.CurrentCamera.CFrame.LookVector.Y < -0.5 then
+                moveDir = Vector3.new(0, -1, 0)
             end
+            
+            bodyVelocity.Velocity = moveDir * (currentHoldSpeed * 10)
         end)
     else
         if holdConnection then holdConnection:Disconnect() end
+        if bodyVelocity then bodyVelocity:Destroy() end
     end
 end)
 
