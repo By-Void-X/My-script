@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (God Mode Added)
-  Fitur: God Mode (Auto Heal), Walk Speed Slider, True Noclip, Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Teleport List Added)
+  Fitur: TP Player List, God Mode, Walk Speed, Noclip, Fly, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -164,7 +164,102 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. GOD MODE (Auto Heal)
+-- A. TELEPORT PLAYER LIST
+local TeleportFrame = Instance.new("Frame")
+TeleportFrame.Parent = ScrollingFrame
+TeleportFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TeleportFrame.Size = UDim2.new(0, 220, 0, 30)
+Instance.new("UICorner", TeleportFrame).CornerRadius = UDim.new(0, 5)
+
+local TeleportTitle = Instance.new("TextLabel")
+TeleportTitle.Parent = TeleportFrame
+TeleportTitle.BackgroundTransparency = 1
+TeleportTitle.Size = UDim2.new(1, -40, 1, 0)
+TeleportTitle.Font = Enum.Font.GothamBold
+TeleportTitle.Text = "Teleport ke Pemain"
+TeleportTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+TeleportTitle.TextSize = 12
+TeleportTitle.TextXAlignment = Enum.TextXAlignment.Left
+TeleportTitle.Position = UDim2.new(0, 10, 0, 0)
+
+local RefreshBtn = Instance.new("TextButton")
+RefreshBtn.Parent = TeleportFrame
+RefreshBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+RefreshBtn.Size = UDim2.new(0, 30, 0, 20)
+RefreshBtn.Position = UDim2.new(1, -35, 0, 5)
+RefreshBtn.Font = Enum.Font.GothamBold
+RefreshBtn.Text = "R"
+RefreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshBtn.TextSize = 12
+Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 5)
+
+local PlayerListFrame = Instance.new("Frame")
+PlayerListFrame.Parent = ScrollingFrame
+PlayerListFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+PlayerListFrame.Size = UDim2.new(0, 220, 0, 10)
+PlayerListFrame.AutomaticSize = Enum.AutomaticSize.Y
+Instance.new("UICorner", PlayerListFrame).CornerRadius = UDim.new(0, 5)
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Parent = PlayerListFrame
+ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ListLayout.Padding = UDim.new(0, 5)
+
+local ListPadding = Instance.new("UIPadding")
+ListPadding.Parent = PlayerListFrame
+ListPadding.PaddingTop = UDim.new(0, 5)
+ListPadding.PaddingBottom = UDim.new(0, 5)
+ListPadding.PaddingLeft = UDim.new(0, 10)
+ListPadding.PaddingRight = UDim.new(0, 10)
+
+local function TeleportToPlayer(targetName)
+    local targetPlayer = Players:FindFirstChild(targetName)
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local myChar = LocalPlayer.Character
+        if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+            -- Teleport dengan jarak sedikit di belakang pemain target (agar tidak bertumpuk)
+            myChar.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+        end
+    end
+end
+
+local function RefreshPlayerList()
+    PlayerListFrame:ClearAllChildren()
+    local newLayout = Instance.new("UIListLayout")
+    newLayout.Parent = PlayerListFrame
+    newLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    newLayout.Padding = UDim.new(0, 5)
+    
+    local newPadding = Instance.new("UIPadding")
+    newPadding.Parent = PlayerListFrame
+    newPadding.PaddingTop = UDim.new(0, 5)
+    newPadding.PaddingBottom = UDim.new(0, 5)
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local pBtn = Instance.new("TextButton")
+            pBtn.Parent = PlayerListFrame
+            pBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            pBtn.Size = UDim2.new(1, 0, 0, 30)
+            pBtn.Font = Enum.Font.Gotham
+            pBtn.Text = "TP: " .. p.Name
+            pBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            pBtn.TextSize = 12
+            Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 5)
+            
+            pBtn.MouseButton1Click:Connect(function()
+                TeleportToPlayer(p.Name)
+            end)
+        end
+    end
+end
+
+RefreshBtn.MouseButton1Click:Connect(RefreshPlayerList)
+Players.PlayerAdded:Connect(RefreshPlayerList)
+Players.PlayerRemoving:Connect(RefreshPlayerList)
+task.spawn(RefreshPlayerList) -- Panggil saat script dimuat
+
+-- B. GOD MODE (Auto Heal)
 local godModeActive = false
 local godModeConnection
 
@@ -178,7 +273,6 @@ CreateToggle("God Mode (Auto Heal)", function(state)
     if godModeActive then
         godModeConnection = RunService.Heartbeat:Connect(function()
             if not godModeActive or not char.Parent then return end
-            -- Paksa darah selalu penuh
             if humanoid.Health < humanoid.MaxHealth then
                 humanoid.Health = humanoid.MaxHealth
             end
@@ -188,7 +282,7 @@ CreateToggle("God Mode (Auto Heal)", function(state)
     end
 end)
 
--- B. WALK SPEED (Kecepatan Jalan)
+-- C. WALK SPEED (Kecepatan Jalan)
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
     currentWalkSpeed = val
@@ -205,7 +299,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- C. TRUE NOCLIP (Anti-Stuck)
+-- D. TRUE NOCLIP (Anti-Stuck)
 local wallHackActive = false
 local noclipConnection
 
@@ -245,7 +339,7 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
     end
 end)
 
--- D. FLY SPEED (Slider & Kontrol)
+-- E. FLY SPEED (Slider & Kontrol)
 local flyActive = false
 local flyConnection
 local bodyVelocity
@@ -286,7 +380,7 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
--- E. MULTIPLE JUMP
+-- F. MULTIPLE JUMP
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
@@ -313,7 +407,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- F. ESP (Highlight Player)
+-- G. ESP (Highlight Player)
 local espActive = false
 local espObjects = {}
 
