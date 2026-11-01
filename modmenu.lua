@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Modern UI & Organized)
-  Fitur: TP Player List, God Mode, Walk Speed, Noclip, Fly, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Ultimate Noclip)
+  Fitur: TP List, God Mode, Walk Speed, Super Noclip, Fly, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -27,7 +27,6 @@ ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.Name = "ModMenu_GUI"
 ScreenGui.ResetOnSpawn = false
 
--- Tombol Buka Menu
 local OpenIcon = Instance.new("TextButton")
 OpenIcon.Parent = ScreenGui
 OpenIcon.BackgroundColor3 = Colors.TitleBar
@@ -42,7 +41,6 @@ Instance.new("UICorner", OpenIcon).CornerRadius = UDim.new(1, 0)
 Instance.new("UIStroke", OpenIcon).Color = Colors.Accent
 Instance.new("UIStroke", OpenIcon).Thickness = 2
 
--- Frame Utama
 local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Colors.Background
@@ -52,14 +50,12 @@ MainFrame.Active = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(60, 60, 70)
 
--- Title Bar (Area Geser Menu)
 local TitleBar = Instance.new("Frame")
 TitleBar.Parent = MainFrame
 TitleBar.BackgroundColor3 = Colors.TitleBar
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
 TitleBar.Position = UDim2.new(0, 0, 0, 0)
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 12)
--- Menutupi sudut bawah titlebar agar rata
 local TitleBarFix = Instance.new("Frame")
 TitleBarFix.Parent = TitleBar
 TitleBarFix.BackgroundColor3 = Colors.TitleBar
@@ -121,7 +117,6 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Area Scroll
 local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Parent = MainFrame
 ScrollingFrame.BackgroundTransparency = 1
@@ -143,7 +138,6 @@ UIPadding.Parent = ScrollingFrame
 UIPadding.PaddingTop = UDim.new(0, 5)
 UIPadding.PaddingBottom = UDim.new(0, 10)
 
--- Fungsi Pembuat Judul Section
 local function CreateSection(text)
     local SectionFrame = Instance.new("Frame")
     SectionFrame.Parent = ScrollingFrame
@@ -161,7 +155,6 @@ local function CreateSection(text)
     SectionText.TextXAlignment = Enum.TextXAlignment.Left
 end
 
--- Fungsi Pembuat Toggle
 local function CreateToggle(name, callback)
     local Button = Instance.new("TextButton")
     Button.Parent = ScrollingFrame
@@ -187,7 +180,6 @@ local function CreateToggle(name, callback)
     end)
 end
 
--- Fungsi Pembuat Slider (Dengan Fill Bar Visual)
 local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     local SliderContainer = Instance.new("Frame")
     SliderContainer.Parent = ScrollingFrame
@@ -224,7 +216,6 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     local isDragging = false
     local currentVal = defaultVal
     
-    -- Set posisi awal fill bar
     local initialPercent = (defaultVal - minVal) / (maxVal - minVal)
     FillBar.Size = UDim2.new(initialPercent, 0, 1, 0)
 
@@ -252,7 +243,7 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
 end
 
 -- ==========================================
--- 2. LOGIKA FITUR (DIKELOMPOKKAN)
+-- 2. LOGIKA FITUR
 -- ==========================================
 
 -- [ SECTION 1: TELEPORT ]
@@ -335,7 +326,6 @@ task.spawn(RefreshPlayerList)
 -- [ SECTION 2: MOVEMENT ]
 CreateSection("🏃 Movement")
 
--- Walk Speed
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
     currentWalkSpeed = val
@@ -345,39 +335,57 @@ CreateSlider("Walk Speed", 16, 200, 16, function(val)
     end
 end)
 
--- Noclip
+-- Super Noclip & Noclip Speed Slider
+local noclipSpeed = 2
+CreateSlider("Noclip Push Speed", 1, 10, 2, function(val)
+    noclipSpeed = val
+end)
+
 local wallHackActive = false
 local noclipConnection
-CreateToggle("True Noclip", function(state)
+
+CreateToggle("Super Noclip (All Blocks)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not hrp or not humanoid then return end
 
     if wallHackActive then
-        noclipConnection = RunService.Heartbeat:Connect(function()
-            if not wallHackActive or not char.Parent then return end
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                    part.CanQuery = false 
-                end
-            end
-            local moveDir = humanoid.MoveDirection
-            if moveDir.Magnitude > 0 then
-                local velocity = hrp.AssemblyLinearVelocity
-                local horizVel = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-                local threshold = currentWalkSpeed * 0.5
-                if horizVel < threshold then
-                    hrp.CFrame = hrp.CFrame + (moveDir * 1.5)
-                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        noclipConnection = RunService.Stepped:Connect(function(time, deltaTime)
+            if not wallHackActive then return end
+            local myChar = LocalPlayer.Character
+            if myChar then
+                local hrp = myChar:FindFirstChild("HumanoidRootPart")
+                local humanoid = myChar:FindFirstChild("Humanoid")
+                if hrp and humanoid then
+                    -- 1. Matikan tabrakan & raycast
+                    for _, part in pairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                            part.CanQuery = false
+                        end
+                    end
+                    
+                    -- 2. Paksa Maju (CFrame Push) untuk menembus dinding
+                    local moveDir = humanoid.MoveDirection
+                    if moveDir.Magnitude > 0 then
+                        -- Menggunakan CFrame + deltaTime agar mulus
+                        hrp.CFrame = hrp.CFrame + (moveDir * noclipSpeed)
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
                 end
             end
         end)
     else
         if noclipConnection then noclipConnection:Disconnect() end
+        -- Kembalikan CanCollide saat Noclip dimatikan
+        local myChar = LocalPlayer.Character
+        if myChar then
+            for _, part in pairs(myChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
     end
 end)
 
@@ -387,7 +395,6 @@ CreateSlider("Fly Speed", 10, 160, 50, function(val)
     flySpeed = val
 end)
 
--- Fly
 local flyActive = false
 local flyConnection
 local bodyVelocity
@@ -419,7 +426,6 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
--- Multiple Jump
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
@@ -447,7 +453,6 @@ end)
 -- [ SECTION 3: SURVIVAL & MISC ]
 CreateSection("🛡️ Survival & Misc")
 
--- God Mode
 local godModeActive = false
 local godModeConnection
 CreateToggle("God Mode (Auto Heal)", function(state)
@@ -469,7 +474,6 @@ CreateToggle("God Mode (Auto Heal)", function(state)
     end
 end)
 
--- ESP
 local espActive = false
 local espObjects = {}
 CreateToggle("ESP (Highlight)", function(state)
@@ -492,7 +496,6 @@ CreateToggle("ESP (Highlight)", function(state)
     end
 end)
 
--- Handle Respawn untuk WalkSpeed
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     if char:FindFirstChild("Humanoid") then
