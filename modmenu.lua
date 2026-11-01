@@ -1,11 +1,12 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Ultimate Noclip)
-  Fitur: TP List, God Mode, Walk Speed, Super Noclip, Fly, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Dropdown TP Fixed)
+  Fitur: Dropdown TP List, God Mode, Walk Speed, Super Noclip, Fly, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
@@ -95,7 +96,7 @@ OpenIcon.MouseButton1Click:Connect(function()
     OpenIcon.Visible = false
 end)
 
--- Logika Dragging (Geser Menu)
+-- Logika Dragging
 local dragging, dragInput, dragStart, startPos
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -143,7 +144,6 @@ local function CreateSection(text)
     SectionFrame.Parent = ScrollingFrame
     SectionFrame.BackgroundTransparency = 1
     SectionFrame.Size = UDim2.new(0, 240, 0, 20)
-    
     local SectionText = Instance.new("TextLabel")
     SectionText.Parent = SectionFrame
     SectionText.BackgroundTransparency = 1
@@ -165,7 +165,6 @@ local function CreateToggle(name, callback)
     Button.TextColor3 = Colors.Text
     Button.TextSize = 13
     Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
-    
     local state = false
     Button.MouseButton1Click:Connect(function()
         state = not state
@@ -186,7 +185,6 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     SliderContainer.BackgroundColor3 = Colors.Section
     SliderContainer.Size = UDim2.new(0, 240, 0, 50)
     Instance.new("UICorner", SliderContainer).CornerRadius = UDim.new(0, 6)
-
     local SliderLabel = Instance.new("TextLabel")
     SliderLabel.Parent = SliderContainer
     SliderLabel.BackgroundTransparency = 1
@@ -197,7 +195,6 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     SliderLabel.TextColor3 = Colors.Text
     SliderLabel.TextSize = 12
     SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-
     local SliderBar = Instance.new("TextButton")
     SliderBar.Parent = SliderContainer
     SliderBar.BackgroundColor3 = Colors.SliderBg
@@ -205,36 +202,27 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     SliderBar.Size = UDim2.new(0, 220, 0, 10)
     SliderBar.Text = ""
     Instance.new("UICorner", SliderBar).CornerRadius = UDim.new(1, 0)
-
     local FillBar = Instance.new("Frame")
     FillBar.Parent = SliderBar
     FillBar.BackgroundColor3 = Colors.Accent
     FillBar.Size = UDim2.new(0, 0, 1, 0)
     FillBar.BorderSizePixel = 0
     Instance.new("UICorner", FillBar).CornerRadius = UDim.new(1, 0)
-
     local isDragging = false
     local currentVal = defaultVal
-    
     local initialPercent = (defaultVal - minVal) / (maxVal - minVal)
     FillBar.Size = UDim2.new(initialPercent, 0, 1, 0)
-
     SliderBar.MouseButton1Down:Connect(function() isDragging = true end)
     UserInputService.InputEnded:Connect(function(input) 
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then 
-            isDragging = false 
-        end 
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then isDragging = false end 
     end)
-
     UserInputService.InputChanged:Connect(function(input)
         if isDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
             local mouseX = UserInputService:GetMouseLocation().X
             local sliderX = SliderBar.AbsolutePosition.X
             local sliderW = SliderBar.AbsoluteSize.X
-            
             local percent = math.clamp((mouseX - sliderX) / sliderW, 0, 1)
             currentVal = math.floor(percent * (maxVal - minVal)) + minVal
-            
             SliderLabel.Text = name .. ": " .. currentVal
             FillBar.Size = UDim2.new(percent, 0, 1, 0)
             callback(currentVal)
@@ -246,60 +234,72 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- [ SECTION 1: TELEPORT ]
+-- [ SECTION 1: TELEPORT (DROPDOWN) ]
 CreateSection("👤 Teleport Pemain")
-local TeleportFrame = Instance.new("Frame")
-TeleportFrame.Parent = ScrollingFrame
-TeleportFrame.BackgroundColor3 = Colors.Section
-TeleportFrame.Size = UDim2.new(0, 240, 0, 30)
-Instance.new("UICorner", TeleportFrame).CornerRadius = UDim.new(0, 6)
 
-local TeleportTitle = Instance.new("TextLabel")
-TeleportTitle.Parent = TeleportFrame
-TeleportTitle.BackgroundTransparency = 1
-TeleportTitle.Size = UDim2.new(1, -45, 1, 0)
-TeleportTitle.Font = Enum.Font.GothamSemibold
-TeleportTitle.Text = "List Pemain"
-TeleportTitle.TextColor3 = Colors.Text
-TeleportTitle.TextSize = 12
-TeleportTitle.TextXAlignment = Enum.TextXAlignment.Left
-TeleportTitle.Position = UDim2.new(0, 10, 0, 0)
+local TPDropdownBtn = Instance.new("TextButton")
+TPDropdownBtn.Parent = ScrollingFrame
+TPDropdownBtn.BackgroundColor3 = Colors.Section
+TPDropdownBtn.Size = UDim2.new(0, 240, 0, 35)
+TPDropdownBtn.Font = Enum.Font.GothamSemibold
+TPDropdownBtn.Text = "Buka List Pemain [▼]"
+TPDropdownBtn.TextColor3 = Colors.Text
+TPDropdownBtn.TextSize = 13
+Instance.new("UICorner", TPDropdownBtn).CornerRadius = UDim.new(0, 6)
 
-local RefreshBtn = Instance.new("TextButton")
-RefreshBtn.Parent = TeleportFrame
-RefreshBtn.BackgroundColor3 = Colors.Accent
-RefreshBtn.Size = UDim2.new(0, 25, 0, 20)
-RefreshBtn.Position = UDim2.new(1, -32, 0, 5)
-RefreshBtn.Font = Enum.Font.GothamBold
-RefreshBtn.Text = "R"
-RefreshBtn.TextColor3 = Colors.Text
-RefreshBtn.TextSize = 12
-Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 4)
+-- Frame Penampung List Pemain (Awalnya tertutup)
+local PlayerListContainer = Instance.new("Frame")
+PlayerListContainer.Parent = ScrollingFrame
+PlayerListContainer.BackgroundColor3 = Colors.Section
+PlayerListContainer.Size = UDim2.new(0, 240, 0, 0) -- Ukuran 0 (Tertutup)
+PlayerListContainer.ClipsDescendants = true
+Instance.new("UICorner", PlayerListContainer).CornerRadius = UDim.new(0, 6)
 
-local PlayerListFrame = Instance.new("Frame")
-PlayerListFrame.Parent = ScrollingFrame
-PlayerListFrame.BackgroundTransparency = 1
-PlayerListFrame.Size = UDim2.new(0, 240, 0, 5)
-PlayerListFrame.AutomaticSize = Enum.AutomaticSize.Y
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Parent = PlayerListContainer
+ListScroll.BackgroundTransparency = 1
+ListScroll.Size = UDim2.new(1, 0, 1, 0)
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.ScrollBarThickness = 3
 
 local ListLayout = Instance.new("UIListLayout")
-ListLayout.Parent = PlayerListFrame
+ListLayout.Parent = ListScroll
 ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ListLayout.Padding = UDim.new(0, 5)
+ListLayout.Padding = UDim.new(0, 4)
+
+local ListPadding = Instance.new("UIPadding")
+ListPadding.Parent = ListScroll
+ListPadding.PaddingTop = UDim.new(0, 5)
+ListPadding.PaddingBottom = UDim.new(0, 5)
+
+-- Logika Buka/Tutup Dropdown
+local isDropdownOpen = false
+local TweenService = game:GetService("TweenService")
+TPDropdownBtn.MouseButton1Click:Connect(function()
+    isDropdownOpen = not isDropdownOpen
+    if isDropdownOpen then
+        TPDropdownBtn.Text = "Tutup List Pemain [▲]"
+        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 240, 0, 150)}):Play()
+    else
+        TPDropdownBtn.Text = "Buka List Pemain [▼]"
+        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 240, 0, 0)}):Play()
+    end
+end)
 
 local function RefreshPlayerList()
-    PlayerListFrame:ClearAllChildren()
+    ListScroll:ClearAllChildren()
     local newLayout = Instance.new("UIListLayout")
-    newLayout.Parent = PlayerListFrame
+    newLayout.Parent = ListScroll
     newLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    newLayout.Padding = UDim.new(0, 5)
+    newLayout.Padding = UDim.new(0, 4)
     
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             local pBtn = Instance.new("TextButton")
-            pBtn.Parent = PlayerListFrame
+            pBtn.Parent = ListScroll
             pBtn.BackgroundColor3 = Colors.SliderBg
-            pBtn.Size = UDim2.new(1, 0, 0, 30)
+            pBtn.Size = UDim2.new(1, -10, 0, 30)
             pBtn.Font = Enum.Font.Gotham
             pBtn.Text = "➔ " .. p.Name
             pBtn.TextColor3 = Colors.Text
@@ -317,7 +317,6 @@ local function RefreshPlayerList()
     end
 end
 
-RefreshBtn.MouseButton1Click:Connect(RefreshPlayerList)
 Players.PlayerAdded:Connect(RefreshPlayerList)
 Players.PlayerRemoving:Connect(RefreshPlayerList)
 task.spawn(RefreshPlayerList)
@@ -335,7 +334,6 @@ CreateSlider("Walk Speed", 16, 200, 16, function(val)
     end
 end)
 
--- Super Noclip & Noclip Speed Slider
 local noclipSpeed = 2
 CreateSlider("Noclip Push Speed", 1, 10, 2, function(val)
     noclipSpeed = val
@@ -343,32 +341,24 @@ end)
 
 local wallHackActive = false
 local noclipConnection
-
 CreateToggle("Super Noclip (All Blocks)", function(state)
     wallHackActive = state
-    local char = LocalPlayer.Character
-    if not char then return end
-
     if wallHackActive then
-        noclipConnection = RunService.Stepped:Connect(function(time, deltaTime)
+        noclipConnection = RunService.Stepped:Connect(function()
             if not wallHackActive then return end
             local myChar = LocalPlayer.Character
             if myChar then
                 local hrp = myChar:FindFirstChild("HumanoidRootPart")
                 local humanoid = myChar:FindFirstChild("Humanoid")
                 if hrp and humanoid then
-                    -- 1. Matikan tabrakan & raycast
                     for _, part in pairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") then
                             part.CanCollide = false
                             part.CanQuery = false
                         end
                     end
-                    
-                    -- 2. Paksa Maju (CFrame Push) untuk menembus dinding
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
-                        -- Menggunakan CFrame + deltaTime agar mulus
                         hrp.CFrame = hrp.CFrame + (moveDir * noclipSpeed)
                         humanoid:ChangeState(Enum.HumanoidStateType.Running)
                     end
@@ -377,19 +367,9 @@ CreateToggle("Super Noclip (All Blocks)", function(state)
         end)
     else
         if noclipConnection then noclipConnection:Disconnect() end
-        -- Kembalikan CanCollide saat Noclip dimatikan
-        local myChar = LocalPlayer.Character
-        if myChar then
-            for _, part in pairs(myChar:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
     end
 end)
 
--- Fly Speed
 local flySpeed = 50
 CreateSlider("Fly Speed", 10, 160, 50, function(val)
     flySpeed = val
@@ -410,7 +390,6 @@ CreateToggle("Fly (Geser Kamera)", function(state)
         bodyVelocity.Parent = hrp
         bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-
         local camera = workspace.CurrentCamera
         flyConnection = RunService.RenderStepped:Connect(function()
             if not flyActive or not bodyVelocity or not bodyVelocity.Parent then return end
@@ -461,7 +440,6 @@ CreateToggle("God Mode (Auto Heal)", function(state)
     if not char then return end
     local humanoid = char:FindFirstChild("Humanoid")
     if not humanoid then return end
-
     if godModeActive then
         godModeConnection = RunService.Heartbeat:Connect(function()
             if not godModeActive or not char.Parent then return end
