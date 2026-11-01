@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Custom Walk Speed)
-  Fitur: Walk Speed Slider, True Noclip, Fly Speed Slider, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (God Mode Added)
+  Fitur: God Mode (Auto Heal), Walk Speed Slider, True Noclip, Fly Speed Slider, Multiple Jump, ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -87,7 +87,6 @@ UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
--- Fungsi Pembuat Tombol Toggle
 local function CreateToggle(name, callback)
     local Button = Instance.new("TextButton")
     Button.Parent = ScrollingFrame
@@ -113,7 +112,6 @@ local function CreateToggle(name, callback)
     end)
 end
 
--- Fungsi Pembuat Slider
 local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     local SliderFrame = Instance.new("Frame")
     SliderFrame.Parent = ScrollingFrame
@@ -166,7 +164,31 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- A. WALK SPEED (Kecepatan Jalan)
+-- A. GOD MODE (Auto Heal)
+local godModeActive = false
+local godModeConnection
+
+CreateToggle("God Mode (Auto Heal)", function(state)
+    godModeActive = state
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return end
+
+    if godModeActive then
+        godModeConnection = RunService.Heartbeat:Connect(function()
+            if not godModeActive or not char.Parent then return end
+            -- Paksa darah selalu penuh
+            if humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end)
+    else
+        if godModeConnection then godModeConnection:Disconnect() end
+    end
+end)
+
+-- B. WALK SPEED (Kecepatan Jalan)
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
     currentWalkSpeed = val
@@ -176,7 +198,6 @@ CreateSlider("Walk Speed", 16, 200, 16, function(val)
     end
 end)
 
--- Update WalkSpeed saat respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     if char:FindFirstChild("Humanoid") then
@@ -184,7 +205,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- B. TRUE NOCLIP (Anti-Stuck & Animasi Tetap Jalan)
+-- C. TRUE NOCLIP (Anti-Stuck)
 local wallHackActive = false
 local noclipConnection
 
@@ -211,9 +232,8 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
             if moveDir.Magnitude > 0 then
                 local velocity = hrp.AssemblyLinearVelocity
                 local horizVel = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-                
-                -- Treshold disesuaikan dengan kecepatan jalan (agar tidak nyangkut saat speed tinggi)
                 local threshold = currentWalkSpeed * 0.5
+                
                 if horizVel < threshold then
                     hrp.CFrame = hrp.CFrame + (moveDir * 1.5)
                     humanoid:ChangeState(Enum.HumanoidStateType.Running)
@@ -225,7 +245,7 @@ CreateToggle("True Noclip (Normal Speed)", function(state)
     end
 end)
 
--- C. FLY SPEED (Slider & Kontrol)
+-- D. FLY SPEED (Slider & Kontrol)
 local flyActive = false
 local flyConnection
 local bodyVelocity
@@ -266,7 +286,7 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
--- D. MULTIPLE JUMP
+-- E. MULTIPLE JUMP
 local jumpActive = false
 local maxJumps = 999
 local jumpCount = 0
@@ -293,7 +313,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- E. ESP (Highlight Player)
+-- F. ESP (Highlight Player)
 local espActive = false
 local espObjects = {}
 
