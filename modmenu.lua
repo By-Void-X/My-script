@@ -1,12 +1,19 @@
 --[[
     ByVoid — No system is safe
-    update: ESP brutal
-      - 3 mode deteksi: Character normal / Humanoid scan / Model name match
-      - health bar di box
-      - jarak (studs) di label
-      - status [HIDDEN] kalau Character unparent / transparent
-      - fallback scan tiap 0.5s buat player yang di-hide game
-    fitur lain sama persis v3.5
+    update: ESP BRUTAL
+      - fallback scan Workspace (nangkep player yang Character di-unparent)
+      - 2D box + 3D box
+      - line dari atas + nama + distance + health bar
+      - glow Highlight
+      - auto re-scan tiap 1s
+    fitur lama SEMUA UTUH:
+      1. multi jump UNLIMITED — tahan
+      2. fly (speed sendiri) — HP + PC
+      3. speed player
+      4. ESP (glow + line + box + nama + 3D + health + dist)
+      5. wallhack noclip (tembus) + wallhack glow (visual) — dipisah
+      6. tp ke player
+    executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
 --]]
 
@@ -40,20 +47,22 @@ local State = {
     WalkSpeed = 50,
     defaultWalkSpeed = 16,
 
+    -- ESP brutal
     EspEnabled = false,
     EspGlow = false,
     EspLine = false,
     EspBox = false,
     EspName = false,
-    EspHealthBar = false,
+    EspHealth = false,
     EspDistance = false,
-    EspHiddenTag = true,
-    EspScanFallback = true,
+    EspBox3D = false,
+    EspFallbackScan = true,     -- scan Workspace buat player yang Character unparent
     EspColor = Color3.fromRGB(0, 255, 100),
-    EspHiddenColor = Color3.fromRGB(255, 0, 255),
-    espObjects = {},
-    scanConn = nil,
+    EspMaxDist = 1000,
+    espObjects = {},            -- [player] = {...}
+    espScanTick = 0,
 
+    -- wallhack
     NoclipEnabled = false,
     WallhackGlowEnabled = false,
     WallhackColor = Color3.fromRGB(255, 60, 60),
@@ -82,8 +91,30 @@ local function notify(t, c)
     Rayfield:Notify({ Title = t, Content = c, Duration = 3 })
 end
 
+-- helper: cari RootPart dari player, termasuk fallback
+local function getPlayerRoot(p)
+    local char = p.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then return hrp, char end
+    end
+    -- fallback: scan Workspace cari Humanoid yang parent-nya punya nama player
+    if State.EspFallbackScan then
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("Humanoid") and d.Parent then
+                local model = d.Parent
+                if model.Name == p.Name or model:FindFirstChild("HumanoidRootPart") then
+                    local hrp = model:FindFirstChild("HumanoidRootPart")
+                    if hrp then return hrp, model end
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
 -- ============================================================
--- 1. MULTI JUMP
+-- 1. MULTI JUMP — TAHAN
 -- ============================================================
 local jumpHolding = false
 local jumpHoldThread = nil
@@ -118,24 +149,19 @@ end
 local function stopJumpHold()
     State.jumpInputActive = false
     jumpHolding = false
-    if jumpHoldThread then
-        task.cancel(jumpHoldThread)
-        jumpHoldThread = nil
-    end
+    if jumpHoldThread then task.cancel(jumpHoldThread); jumpHoldThread = nil end
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if not State.MultiJumpEnabled then return end
-    if input.KeyCode == Enum.KeyCode.Space
-        or input.KeyCode == Enum.KeyCode.ButtonA then
+    if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
         startJumpHold()
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Space
-        or input.KeyCode == Enum.KeyCode.ButtonA then
+    if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
         stopJumpHold()
     end
 end)
@@ -149,31 +175,19 @@ local function hookTouchJumpButton()
     if not frame then return end
     local jumpBtn = frame:WaitForChild("JumpButton", 10)
     if not jumpBtn then return end
-
     jumpBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            if State.MultiJumpEnabled then startJumpHold() end
-        end
+        if input.UserInputType == Enum.UserInputType.Touch and State.MultiJumpEnabled then startJumpHold() end
     end)
     jumpBtn.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            stopJumpHold()
-        end
+        if input.UserInputType == Enum.UserInputType.Touch then stopJumpHold() end
     end)
     jumpBtn.MouseButton1Down:Connect(function()
         if State.MultiJumpEnabled then startJumpHold() end
     end)
-    jumpBtn.MouseButton1Up:Connect(function()
-        stopJumpHold()
-    end)
+    jumpBtn.MouseButton1Up:Connect(function() stopJumpHold() end)
 end
-
 task.spawn(hookTouchJumpButton)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(2)
-    task.spawn(hookTouchJumpButton)
-end)
+LocalPlayer.CharacterAdded:Connect(function() task.wait(2); task.spawn(hookTouchJumpButton) end)
 
 local function setMultiJump(v)
     State.MultiJumpEnabled = v
@@ -199,7 +213,6 @@ local function startFly()
     local hrp = getHRP()
     local hum = getHum()
     if not hrp or not hum then return end
-
     stopFly()
     State.FlyEnabled = true
     if _G.OllieFlyUI then _G.OllieFlyUI.show() end
@@ -216,7 +229,6 @@ local function startFly()
     bg.D = 500
     bg.Parent = hrp
     State.flyBG = bg
-
     hum.PlatformStand = true
 
     State.flyConn = RunService.RenderStepped:Connect(function()
@@ -224,19 +236,13 @@ local function startFly()
         local hrp2 = getHRP()
         local hum2 = getHum()
         if not hrp2 or not hum2 or hum2.Health <= 0 then stopFly(); return end
-
         bg.CFrame = Camera.CFrame
-
         local dir = hum2.MoveDirection
         local vel = Vector3.zero
-        if dir.Magnitude > 0 then
-            vel = dir.Unit * State.FlySpeed
-        end
-
+        if dir.Magnitude > 0 then vel = dir.Unit * State.FlySpeed end
         local vert = 0
         if State.flyUp or UserInputService:IsKeyDown(Enum.KeyCode.E) then vert = 1 end
         if State.flyDown or UserInputService:IsKeyDown(Enum.KeyCode.Q) then vert = -1 end
-
         vel = vel + Vector3.new(0, vert * State.FlySpeed, 0)
         bv.Velocity = vel
     end)
@@ -258,20 +264,15 @@ end
 -- ============================================================
 -- 4. ESP BRUTAL
 -- ============================================================
--- Struktur: espObjects[player] = {
---   highlight, tracer, boxLines (4), nameTag, healthBar, distanceLabel,
---   resolvedChar (Model), resolvedHRP, resolvedHum, isHidden
--- }
-
 local function removeESP(p)
     local obj = State.espObjects[p]
     if not obj then return end
     if obj.highlight then obj.highlight:Destroy() end
     if obj.tracer then obj.tracer:Remove() end
-    for _, l in ipairs(obj.boxLines) do l:Remove() end
-    if obj.nameTag and obj.nameTag.Parent then obj.nameTag.Parent:Destroy() end
-    if obj.healthBar and obj.healthBar.Parent then obj.healthBar.Parent:Destroy() end
-    if obj.distanceLabel and obj.distanceLabel.Parent then obj.distanceLabel.Parent:Destroy() end
+    for _, l in ipairs(obj.boxLines or {}) do l:Remove() end
+    for _, l in ipairs(obj.box3DLines or {}) do l:Remove() end
+    if obj.billboard and obj.billboard.Parent then obj.billboard:Destroy() end
+    if obj.healthBg and obj.healthBg.Parent then obj.healthBg:Destroy() end
     State.espObjects[p] = nil
 end
 
@@ -280,94 +281,32 @@ local function clearAllESP()
     State.espObjects = {}
 end
 
--- resolve character: 3 mode deteksi
-local function resolveChar(p)
-    -- 1. normal
-    local char = p.Character
-    if char and char.Parent and char:FindFirstChild("HumanoidRootPart") then
-        return char, char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid"), false
-    end
-
-    -- 2. scan Workspace cari Humanoid yang Player-nya cocok (mode fallback)
-    if State.EspScanFallback then
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Humanoid") and obj.Parent then
-                local root = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent:FindFirstChild("Torso")
-                if root then
-                    local owner = Players:GetPlayerFromCharacter(obj.Parent)
-                    if owner == p then
-                        return obj.Parent, root, obj, true
-                    end
-                end
-            end
-        end
-    end
-
-    -- 3. scan Model dengan nama mirip username
-    if State.EspScanFallback then
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name:lower():find(p.Name:lower(), 1, true) then
-                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-                local hum = obj:FindFirstChildOfClass("Humanoid")
-                if root and hum then
-                    return obj, root, hum, true
-                end
-            end
-        end
-    end
-
-    return nil, nil, nil, false
-end
-
-local function makeLabel(adornee, offsetY, sizeX, sizeY, textColor)
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "OllieESPBB"
-    bb.Adornee = adornee
-    bb.Size = UDim2.new(0, sizeX, 0, sizeY)
-    bb.StudsOffset = Vector3.new(0, offsetY, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = adornee
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = textColor
-    label.TextStrokeTransparency = 0
-    label.TextStrokeColor3 = Color3.new(0, 0, 0)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBold
-    label.Parent = bb
-    return bb, label
-end
-
 local function createESP(p)
     if p == LocalPlayer then return end
     if State.espObjects[p] then removeESP(p) end
     if not State.EspEnabled then return end
 
-    local char, hrp, hum, isHidden = resolveChar(p)
-
     local obj = {
         highlight = nil,
         tracer = nil,
         boxLines = {},
-        nameTag = nil,
-        healthBar = nil,
-        distanceLabel = nil,
-        resolvedChar = char,
-        resolvedHRP = hrp,
-        resolvedHum = hum,
-        isHidden = isHidden,
+        box3DLines = {},
+        billboard = nil,
+        nameLabel = nil,
+        distLabel = nil,
+        healthBg = nil,
+        healthFg = nil,
+        cachedChar = nil,
     }
 
-    local color = isHidden and State.EspHiddenColor or State.EspColor
+    local char = p.Character
 
-    -- glow
+    -- GLOW
     if State.EspGlow and char then
         local hl = Instance.new("Highlight")
         hl.Name = "OllieESP"
-        hl.FillColor = color
-        hl.OutlineColor = color
+        hl.FillColor = State.EspColor
+        hl.OutlineColor = State.EspColor
         hl.FillTransparency = 0.5
         hl.OutlineTransparency = 0
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -376,79 +315,113 @@ local function createESP(p)
         obj.highlight = hl
     end
 
-    -- nama + jarak + hidden tag
-    if State.EspName and char then
-        local adornee = char:FindFirstChild("Head") or hrp
-        if adornee then
-            local text = p.Name
-            if State.EspHiddenTag and isHidden then
-                text = text .. " [HIDDEN]"
-            end
-            local bb, label = makeLabel(adornee, 3.2, 260, 40, color)
-            label.Text = text
-            obj.nameTag = label
-        end
-    end
-
-    -- jarak (label kecil di bawah nama)
-    if State.EspDistance and char then
-        local adornee = char:FindFirstChild("Head") or hrp
-        if adornee then
-            local bb, label = makeLabel(adornee, 2.2, 120, 24, color)
-            label.Text = "0m"
-            obj.distanceLabel = label
-        end
-    end
-
-    -- health bar (frame 2D di atas head pakai BillboardGui)
-    if State.EspHealthBar and char then
-        local adornee = char:FindFirstChild("Head") or hrp
-        if adornee then
+    -- NAMA + DISTANCE (Billboard)
+    if State.EspName or State.EspDistance then
+        local head = char and char:FindFirstChild("Head")
+        if head then
             local bb = Instance.new("BillboardGui")
-            bb.Name = "OllieESPHealth"
-            bb.Adornee = adornee
-            bb.Size = UDim2.new(0, 200, 0, 8)
-            bb.StudsOffset = Vector3.new(0, 3.8, 0)
+            bb.Name = "OllieESPName"
+            bb.Adornee = head
+            bb.Size = UDim2.new(0, 220, 0, 60)
+            bb.StudsOffset = Vector3.new(0, 2.5, 0)
             bb.AlwaysOnTop = true
-            bb.Parent = adornee
+            bb.Parent = head
+
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            nameLabel.Position = UDim2.new(0, 0, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = p.Name
+            nameLabel.TextColor3 = State.EspColor
+            nameLabel.TextStrokeTransparency = 0
+            nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+            nameLabel.TextScaled = true
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.Visible = State.EspName
+            nameLabel.Parent = bb
+            obj.nameLabel = nameLabel
+
+            local distLabel = Instance.new("TextLabel")
+            distLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            distLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            distLabel.BackgroundTransparency = 1
+            distLabel.Text = ""
+            distLabel.TextColor3 = State.EspColor
+            distLabel.TextStrokeTransparency = 0
+            distLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+            distLabel.TextScaled = true
+            distLabel.Font = Enum.Font.Gotham
+            distLabel.Visible = State.EspDistance
+            distLabel.Parent = bb
+            obj.distLabel = distLabel
+
+            obj.billboard = bb
+        end
+    end
+
+    -- HEALTH BAR (Billboard terpisah)
+    if State.EspHealth and char then
+        local head = char:FindFirstChild("Head")
+        if head then
+            local hb = Instance.new("BillboardGui")
+            hb.Name = "OllieESPHealth"
+            hb.Adornee = head
+            hb.Size = UDim2.new(0, 50, 0, 6)
+            hb.StudsOffset = Vector3.new(0, 3.2, 0)
+            hb.AlwaysOnTop = true
+            hb.Parent = head
 
             local bg = Instance.new("Frame")
             bg.Size = UDim2.new(1, 0, 1, 0)
-            bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-            bg.BorderSizePixel = 0
-            bg.Parent = bb
+            bg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            bg.BorderSizePixel = 1
+            bg.BorderColor3 = Color3.new(0, 0, 0)
+            bg.Parent = hb
 
-            local fill = Instance.new("Frame")
-            fill.Name = "Fill"
-            fill.Size = UDim2.new(1, 0, 1, 0)
-            fill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            fill.BorderSizePixel = 0
-            fill.Parent = bg
+            local fg = Instance.new("Frame")
+            fg.Size = UDim2.new(1, 0, 1, 0)
+            fg.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            fg.BorderSizePixel = 0
+            fg.Parent = bg
 
-            obj.healthBar = fill
+            obj.healthBg = bg
+            obj.healthFg = fg
         end
     end
 
-    -- line
+    -- LINE 2D
     if State.EspLine then
         local ok, line = pcall(function() return Drawing.new("Line") end)
         if ok and line then
-            line.Color = color
+            line.Color = State.EspColor
             line.Thickness = 1.5
             line.Visible = false
             obj.tracer = line
         end
     end
 
-    -- box
+    -- BOX 2D
     if State.EspBox then
         for i = 1, 4 do
             local ok, l = pcall(function() return Drawing.new("Line") end)
             if ok and l then
-                l.Color = color
+                l.Color = State.EspColor
                 l.Thickness = 1
                 l.Visible = false
                 table.insert(obj.boxLines, l)
+            end
+        end
+    end
+
+    -- BOX 3D (12 garis kubus)
+    if State.EspBox3D then
+        for i = 1, 12 do
+            local ok, l = pcall(function() return Drawing.new("Line") end)
+            if ok and l then
+                l.Color = State.EspColor
+                l.Thickness = 1
+                l.Visible = false
+                table.insert(obj.box3DLines, l)
             end
         end
     end
@@ -464,97 +437,154 @@ local function rebuildAllESP()
     end
 end
 
+-- update bounding box 3D: 8 titik kubus di sekitar root
+local function drawBox3D(obj, hrp)
+    if #obj.box3DLines ~= 12 then return end
+    local size = Vector3.new(3, 6, 3)
+    local pos = hrp.Position
+    local cf = CFrame.new(pos)
+    local corners = {}
+    local half = size / 2
+    local offsets = {
+        Vector3.new(-half.X, -half.Y, -half.Z), Vector3.new( half.X, -half.Y, -half.Z),
+        Vector3.new( half.X,  half.Y, -half.Z), Vector3.new(-half.X,  half.Y, -half.Z),
+        Vector3.new(-half.X, -half.Y,  half.Z), Vector3.new( half.X, -half.Y,  half.Z),
+        Vector3.new( half.X,  half.Y,  half.Z), Vector3.new(-half.X,  half.Y,  half.Z),
+    }
+    for i = 1, 8 do
+        local wp = (cf + offsets[i]).Position
+        local sp, on = Camera:WorldToViewportPoint(wp)
+        corners[i] = {sp = sp, on = on}
+    end
+    -- 12 edge: 0-1,1-2,2-3,3-0,4-5,5-6,6-7,7-4,0-4,1-5,2-6,3-7
+    local edges = {
+        {1,2},{2,3},{3,4},{4,1},
+        {5,6},{6,7},{7,8},{8,5},
+        {1,5},{2,6},{3,7},{4,8},
+    }
+    for i, e in ipairs(edges) do
+        local a = corners[e[1]]
+        local b = corners[e[2]]
+        local l = obj.box3DLines[i]
+        if a and b and a.on and b.on then
+            l.From = Vector2.new(a.sp.X, a.sp.Y)
+            l.To = Vector2.new(b.sp.X, b.sp.Y)
+            l.Color = State.EspColor
+            l.Visible = true
+        else
+            l.Visible = false
+        end
+    end
+end
+
 local function updateESP()
     if not State.EspEnabled then return end
-    for p, obj in pairs(State.espObjects) do
-        -- re-resolve tiap frame kalau char ilang / hidden
-        local char = p.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp or not char.Parent then
-            local c2, h2, hum2, hidden2 = resolveChar(p)
-            if c2 then
-                char = c2; hrp = h2
-                obj.resolvedChar = c2
-                obj.resolvedHRP = h2
-                obj.resolvedHum = hum2
-                obj.isHidden = hidden2
-                if obj.highlight then obj.highlight.Adornee = c2 end
+
+    -- auto-scan tiap 1s buat player baru / unparent char
+    State.espScanTick = State.espScanTick + 1
+    if State.espScanTick >= 60 then
+        State.espScanTick = 0
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and not State.espObjects[p] then
+                if State.EspFallbackScan then
+                    local hrp, char = getPlayerRoot(p)
+                    if hrp then createESP(p) end
+                else
+                    if p.Character then createESP(p) end
+                end
             end
-        else
-            obj.resolvedChar = char
-            obj.resolvedHRP = hrp
-            obj.resolvedHum = char:FindFirstChildOfClass("Humanoid")
-            obj.isHidden = false
+        end
+    end
+
+    local myHRP = getHRP()
+    local myPos = myHRP and myHRP.Position or Vector3.zero
+
+    for p, obj in pairs(State.espObjects) do
+        local hrp, char = getPlayerRoot(p)
+        -- refresh char cache kalau beda
+        if char and obj.cachedChar ~= char then
+            obj.cachedChar = char
+            -- rebind highlight adornee
+            if obj.highlight then obj.highlight.Adornee = char end
+            -- rebind billboard ke head
+            local head = char:FindFirstChild("Head")
+            if head and obj.billboard then obj.billboard.Adornee = head end
+            if head and obj.healthBg and obj.healthBg.Parent and obj.healthBg.Parent:IsA("BillboardGui") then
+                obj.healthBg.Parent.Adornee = head
+            end
         end
 
         if not hrp then
             if obj.tracer then obj.tracer.Visible = false end
             for _, l in ipairs(obj.boxLines) do l.Visible = false end
-            if obj.nameTag then obj.nameTag.TextTransparency = 1 end
+            for _, l in ipairs(obj.box3DLines) do l.Visible = false end
+            if obj.nameLabel then obj.nameLabel.TextTransparency = 1 end
+            if obj.distLabel then obj.distLabel.TextTransparency = 1 end
             if obj.highlight then obj.highlight.Enabled = false end
-            if obj.healthBar then obj.healthBar.Parent.Parent.Enabled = false end
-            if obj.distanceLabel then obj.distanceLabel.TextTransparency = 1 end
+            if obj.healthFg then obj.healthFg.Visible = false end
             continue
         end
 
-        local color = obj.isHidden and State.EspHiddenColor or State.EspColor
-
-        -- highlight
-        if obj.highlight then
-            obj.highlight.FillColor = color
-            obj.highlight.OutlineColor = color
-            obj.highlight.Enabled = State.EspGlow
-            if obj.resolvedChar then obj.highlight.Adornee = obj.resolvedChar end
-        end
-
-        -- nama + hidden tag
-        if obj.nameTag then
-            local text = p.Name
-            if State.EspHiddenTag and obj.isHidden then
-                text = text .. " [HIDDEN]"
-            end
-            obj.nameTag.Text = text
-            obj.nameTag.TextColor3 = color
-            obj.nameTag.TextTransparency = State.EspName and 0 or 1
-        end
-
         -- jarak
-        if obj.distanceLabel then
-            if State.EspDistance then
-                local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-                obj.distanceLabel.Text = string.format("%.0fm", dist)
-                obj.distanceLabel.TextColor3 = color
-                obj.distanceLabel.TextTransparency = 0
-            else
-                obj.distanceLabel.TextTransparency = 1
-            end
+        local dist = (hrp.Position - myPos).Magnitude
+        if dist > State.EspMaxDist then
+            if obj.tracer then obj.tracer.Visible = false end
+            for _, l in ipairs(obj.boxLines) do l.Visible = false end
+            for _, l in ipairs(obj.box3DLines) do l.Visible = false end
+            if obj.nameLabel then obj.nameLabel.Visible = false end
+            if obj.distLabel then obj.distLabel.Visible = false end
+            if obj.highlight then obj.highlight.Enabled = false end
+            continue
+        end
+
+        -- glow
+        if obj.highlight then
+            obj.highlight.FillColor = State.EspColor
+            obj.highlight.OutlineColor = State.EspColor
+            obj.highlight.Enabled = State.EspGlow
+        end
+
+        -- nama
+        if obj.nameLabel then
+            obj.nameLabel.Visible = State.EspName
+            obj.nameLabel.TextColor3 = State.EspColor
+            obj.nameLabel.Text = p.Name
+        end
+
+        -- distance
+        if obj.distLabel then
+            obj.distLabel.Visible = State.EspDistance
+            obj.distLabel.TextColor3 = State.EspColor
+            obj.distLabel.Text = string.format("[%d]", math.floor(dist))
         end
 
         -- health bar
-        if obj.healthBar and obj.resolvedHum then
-            local hpPct = math.clamp(obj.resolvedHum.Health / obj.resolvedHum.MaxHealth, 0, 1)
-            obj.healthBar.Size = UDim2.new(hpPct, 0, 1, 0)
-            obj.healthBar.BackgroundColor3 = Color3.fromRGB(
-                math.floor(255 * (1 - hpPct)),
-                math.floor(255 * hpPct),
-                0
-            )
+        if obj.healthFg then
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local ratio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+                obj.healthFg.Size = UDim2.new(ratio, 0, 1, 0)
+                local r = 1 - ratio
+                local g = ratio
+                obj.healthFg.BackgroundColor3 = Color3.new(r, g, 0)
+                obj.healthFg.Visible = State.EspHealth
+            end
         end
 
-        -- line
+        -- line 2D
         if obj.tracer then
             local sp, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             if onScreen and State.EspLine then
                 obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 obj.tracer.To = Vector2.new(sp.X, sp.Y)
-                obj.tracer.Color = color
+                obj.tracer.Color = State.EspColor
                 obj.tracer.Visible = true
             else
                 obj.tracer.Visible = false
             end
         end
 
-        -- box
+        -- box 2D
         if #obj.boxLines == 4 then
             if State.EspBox then
                 local topPos = hrp.Position + Vector3.new(0, 3, 0)
@@ -574,7 +604,7 @@ local function updateESP()
                     obj.boxLines[3].From = br; obj.boxLines[3].To = bl
                     obj.boxLines[4].From = bl; obj.boxLines[4].To = tl
                     for _, l in ipairs(obj.boxLines) do
-                        l.Color = color
+                        l.Color = State.EspColor
                         l.Visible = true
                     end
                 else
@@ -584,17 +614,14 @@ local function updateESP()
                 for _, l in ipairs(obj.boxLines) do l.Visible = false end
             end
         end
-    end
-end
 
--- fallback scan loop: tiap 0.5s, cek player yang belum ke-track
-local function fallbackScan()
-    if not State.EspEnabled or not State.EspScanFallback then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and not State.espObjects[p] then
-            -- belum ke-track? coba create
-            local c, h = resolveChar(p)
-            if c and h then createESP(p) end
+        -- box 3D
+        if #obj.box3DLines == 12 then
+            if State.EspBox3D then
+                drawBox3D(obj, hrp)
+            else
+                for _, l in ipairs(obj.box3DLines) do l.Visible = false end
+            end
         end
     end
 end
@@ -613,12 +640,6 @@ for _, p in ipairs(Players:GetPlayers()) do setupPlayerESP(p) end
 Players.PlayerAdded:Connect(setupPlayerESP)
 Players.PlayerRemoving:Connect(removeESP)
 RunService.RenderStepped:Connect(updateESP)
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        fallbackScan()
-    end
-end)
 
 -- ============================================================
 -- 5A. NOCLIP
@@ -638,7 +659,6 @@ end
 local function startNoclip()
     local char = getChar()
     if char then setNoclipParts(char) end
-
     if State.noclipConn then State.noclipConn:Disconnect() end
     State.noclipConn = RunService.Stepped:Connect(function()
         if not State.NoclipEnabled then return end
@@ -646,9 +666,7 @@ local function startNoclip()
         if not c then return end
         for _, part in ipairs(c:GetDescendants()) do
             if part:IsA("BasePart") and part.CanCollide then
-                if State.savedCollide[part] == nil then
-                    State.savedCollide[part] = true
-                end
+                if State.savedCollide[part] == nil then State.savedCollide[part] = true end
                 part.CanCollide = false
             end
         end
@@ -658,9 +676,7 @@ end
 local function stopNoclip()
     if State.noclipConn then State.noclipConn:Disconnect(); State.noclipConn = nil end
     for part, orig in pairs(State.savedCollide) do
-        if part and part.Parent then
-            part.CanCollide = orig
-        end
+        if part and part.Parent then part.CanCollide = orig end
     end
     State.savedCollide = {}
 end
@@ -672,10 +688,8 @@ local function createWallhackGlow(p)
     if p == LocalPlayer then return end
     local char = p.Character
     if not char then return end
-
     local old = char:FindFirstChild("OllieWH")
     if old then old:Destroy() end
-
     local hl = Instance.new("Highlight")
     hl.Name = "OllieWH"
     hl.FillColor = State.WallhackColor
@@ -704,9 +718,7 @@ local function applyAllWallhackGlow()
 end
 
 local function clearAllWallhackGlow()
-    for _, p in ipairs(Players:GetPlayers()) do
-        removeWallhackGlow(p)
-    end
+    for _, p in ipairs(Players:GetPlayers()) do removeWallhackGlow(p) end
     State.wallhackObjects = {}
 end
 
@@ -739,9 +751,7 @@ end
 local function teleportToPlayer(name)
     local target = Players:FindFirstChild(name)
     if not target then return end
-    local tChar = target.Character
-    if not tChar then return end
-    local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+    local tHRP = getPlayerRoot(target)
     local myHRP = getHRP()
     if not tHRP or not myHRP then return end
     myHRP.CFrame = tHRP.CFrame + Vector3.new(0, 3, 0)
@@ -790,7 +800,7 @@ _G.OllieFlyUI = {
 }
 
 -- ============================================================
--- UI
+-- UI RAYFIELD — ByVoid
 -- ============================================================
 local Window = Rayfield:CreateWindow({
     Name = "ByVoid",
@@ -800,128 +810,41 @@ local Window = Rayfield:CreateWindow({
     Keybind = Enum.KeyCode.RightShift,
 })
 
+-- MOVEMENT
 local MoveTab = Window:CreateTab("Movement", 4483362458)
-
 MoveTab:CreateSection("Multi Jump (Unlimited — Tahan)")
 MoveTab:CreateToggle({
     Name = "Enable Multi Jump",
-    CurrentValue = false,
-    Flag = "MultiJump",
+    CurrentValue = false, Flag = "MultiJump",
     Callback = function(v) setMultiJump(v) end,
 })
 MoveTab:CreateSlider({
-    Name = "Jump Velocity",
-    Range = {30, 200},
-    Increment = 5,
-    Suffix = "vel",
-    CurrentValue = 50,
-    Flag = "JumpVel",
+    Name = "Jump Velocity", Range = {30, 200}, Increment = 5, Suffix = "vel",
+    CurrentValue = 50, Flag = "JumpVel",
     Callback = function(v) State.jumpVelocity = v end,
 })
 MoveTab:CreateSlider({
-    Name = "Jump Spam Interval",
-    Range = {0.03, 0.5},
-    Increment = 0.01,
-    Suffix = "s",
-    CurrentValue = 0.08,
-    Flag = "JumpInterval",
+    Name = "Jump Spam Interval", Range = {0.03, 0.5}, Increment = 0.01, Suffix = "s",
+    CurrentValue = 0.08, Flag = "JumpInterval",
     Callback = function(v) State.JumpHoldInterval = v end,
 })
 
 MoveTab:CreateSection("Fly")
 MoveTab:CreateToggle({
-    Name = "Enable Fly",
-    CurrentValue = false,
-    Flag = "Fly",
+    Name = "Enable Fly", CurrentValue = false, Flag = "Fly",
     Callback = function(v) toggleFly(v) end,
 })
 MoveTab:CreateSlider({
-    Name = "Fly Speed",
-    Range = {10, 500},
-    Increment = 10,
-    Suffix = "studs/s",
-    CurrentValue = 100,
-    Flag = "FlySpeed",
+    Name = "Fly Speed", Range = {10, 500}, Increment = 10, Suffix = "studs/s",
+    CurrentValue = 100, Flag = "FlySpeed",
     Callback = function(v) State.FlySpeed = v end,
 })
 
 MoveTab:CreateSection("Speed")
 MoveTab:CreateToggle({
-    Name = "Enable Speed",
-    CurrentValue = false,
-    Flag = "Speed",
+    Name = "Enable Speed", CurrentValue = false, Flag = "Speed",
     Callback = function(v) State.SpeedEnabled = v; applySpeed() end,
 })
 MoveTab:CreateSlider({
-    Name = "Walk Speed",
-    Range = {16, 300},
-    Increment = 1,
-    Suffix = "studs/s",
-    CurrentValue = 50,
-    Flag = "WalkSpeed",
-    Callback = function(v) State.WalkSpeed = v; applySpeed() end,
-})
-
--- VISUAL
-local VisualTab = Window:CreateTab("Visual", 4483362458)
-
-VisualTab:CreateSection("ESP Brutal")
-Toggles.Esp = VisualTab:CreateToggle({
-    Name = "Enable ESP",
-    CurrentValue = false,
-    Flag = "ESP",
-    Callback = function(v)
-        State.EspEnabled = v
-        if v then
-            if not (State.EspGlow or State.EspLine or State.EspBox or State.EspName) then
-                notify("ByVoid", "pilih dulu: Glow / Line / Box / Nama")
-            end
-            rebuildAllESP()
-        else
-            clearAllESP()
-        end
-    end,
-})
-Toggles.Glow = VisualTab:CreateToggle({
-    Name = "ESP Glow",
-    CurrentValue = false,
-    Flag = "ESPGlow",
-    Callback = function(v) State.EspGlow = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.Line = VisualTab:CreateToggle({
-    Name = "ESP Line (dari atas)",
-    CurrentValue = false,
-    Flag = "ESPLine",
-    Callback = function(v) State.EspLine = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.Box = VisualTab:CreateToggle({
-    Name = "ESP Box",
-    CurrentValue = false,
-    Flag = "ESPBox",
-    Callback = function(v) State.EspBox = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.Name = VisualTab:CreateToggle({
-    Name = "ESP Nama",
-    CurrentValue = false,
-    Flag = "ESPName",
-    Callback = function(v) State.EspName = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.Health = VisualTab:CreateToggle({
-    Name = "ESP Health Bar",
-    CurrentValue = false,
-    Flag = "ESPHealth",
-    Callback = function(v) State.EspHealthBar = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.Distance = VisualTab:CreateToggle({
-    Name = "ESP Jarak (studs)",
-    CurrentValue = false,
-    Flag = "ESPDistance",
-    Callback = function(v) State.EspDistance = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-Toggles.HiddenTag = VisualTab:CreateToggle({
-    Name = "Tag [HIDDEN]",
-    CurrentValue = true,
-    Flag = "ESPHiddenTag",
-    Callback = function(v) State.EspHiddenTag = v end,
-})
-Toggles.ScanFallback = VisualTab
+    Name = "Walk Speed", Range = {16, 300}, Increment = 1, Suffix = "studs/s",
+    CurrentValue = 50, Flag = "WalkSpeed",
