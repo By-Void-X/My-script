@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Dual ESP System)
-  Fitur: Draggable Icon, Resizable UI, TP List, God Mode, Speed, Noclip, Fly, Dual ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Anti-Touch Noclip & Clean ESP)
+  Fitur: Draggable UI, TP, Speed, Super Noclip, Fly, Dual ESP (Fixed)
 ]]
 
 local Players = game:GetService("Players")
@@ -11,7 +11,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 -- ==========================================
--- 1. SETUP UI (MODERN DESIGN)
+-- 1. SETUP UI
 -- ==========================================
 local Colors = {
     Background = Color3.fromRGB(30, 30, 36),
@@ -298,7 +298,6 @@ end
 -- 2. LOGIKA FITUR
 -- ==========================================
 
--- [ SECTION 1: TELEPORT (DROPDOWN) ]
 CreateSection("👤 Teleport Pemain")
 local TPDropdownBtn = Instance.new("TextButton")
 TPDropdownBtn.Parent = ScrollingFrame
@@ -382,7 +381,6 @@ Players.PlayerRemoving:Connect(RefreshPlayerList)
 task.spawn(RefreshPlayerList)
 
 
--- [ SECTION 2: MOVEMENT ]
 CreateSection("🏃 Movement")
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
@@ -400,13 +398,13 @@ end)
 
 local wallHackActive = false
 local noclipConnection
-CreateToggle("Super Noclip (All Blocks)", function(state)
+CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if not char then return end
 
     if wallHackActive then
-        noclipConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        noclipConnection = RunService.RenderStepped:Connect(function(deltaTime)
             if not wallHackActive then return end
             local myChar = LocalPlayer.Character
             if myChar then
@@ -417,6 +415,7 @@ CreateToggle("Super Noclip (All Blocks)", function(state)
                         if part:IsA("BasePart") then
                             part.CanCollide = false
                             part.CanQuery = false
+                            part.CanTouch = false -- Mencegah anti-cheat Brookhaven mendeteksi sentuhan
                         end
                     end
                     local moveDir = humanoid.MoveDirection
@@ -436,8 +435,19 @@ CreateToggle("Super Noclip (All Blocks)", function(state)
                 if part:IsA("BasePart") then
                     part.CanCollide = true
                     part.CanQuery = true
+                    part.CanTouch = true
                 end
             end
+        end
+    end
+end)
+
+-- Cegah Jump saat Noclip aktif (supaya server Brookhaven tidak curiga)
+UserInputService.JumpRequest:Connect(function()
+    if wallHackActive then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
         end
     end
 end)
@@ -477,33 +487,7 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     end
 end)
 
-local jumpActive = false
-local maxJumps = 999
-local jumpCount = 0
-CreateToggle("Multiple Jump", function(state)
-    jumpActive = state
-    if not state then jumpCount = 0 end
-end)
-UserInputService.JumpRequest:Connect(function()
-    if jumpActive then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            local humanoid = char.Humanoid
-            if humanoid:GetState() == Enum.HumanoidStateType.Landed or humanoid:GetState() == Enum.HumanoidStateType.Running then
-                jumpCount = 0
-            end
-            if jumpCount < maxJumps then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                jumpCount = jumpCount + 1
-            end
-        end
-    end
-end)
-
-
--- [ SECTION 3: SURVIVAL & MISC ]
 CreateSection("🛡️ Survival & Misc")
-
 local godModeActive = false
 local godModeConnection
 CreateToggle("God Mode (Auto Heal)", function(state)
@@ -525,14 +509,12 @@ CreateToggle("God Mode (Auto Heal)", function(state)
 end)
 
 -- ==========================================
--- 3. FITUR DUAL ESP
+-- 3. FITUR DUAL ESP (CLEAN VERSION)
 -- ==========================================
 CreateSection("👁️ ESP System (2 Types)")
 
--- A. ESP HIGHLIGHT (Growing / Berubah Warna)
 local espHighlightActive = false
 local espHighlights = {}
-
 local function UpdateESPHighlight()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -552,7 +534,6 @@ CreateToggle("ESP Highlight (Growing)", function(state)
     espHighlightActive = state
     if state then
         UpdateESPHighlight()
-        -- Update otomatis saat player respawn/berubah objek (Hide and Seek)
         Players.PlayerAdded:Connect(function(p)
             p.CharacterAdded:Connect(function()
                 task.wait(0.5)
@@ -567,35 +548,33 @@ CreateToggle("ESP Highlight (Growing)", function(state)
     end
 end)
 
--- B. ESP BOX (Garis, Nama, Jarak, Darah)
 local espBoxActive = false
 local espDrawings = {}
-
--- Inisialisasi Drawing (Hanya jalan jika executor mendukung)
-local Drawing = Drawing or nil
-if not Drawing then
-    warn("Executor tidak mendukung Drawing API. ESP Box tidak akan berfungsi.")
-end
 
 CreateToggle("ESP Box (Line, Text, Health)", function(state)
     espBoxActive = state
     if not state then
-        -- Hapus semua gambar jika dimatikan
-        for _, d in pairs(espDrawings) do
-            if d then d:Remove() end
+        -- Hapus semua gambar secara paksa dan sembunyikan sebelum dibuang
+        for player, d in pairs(espDrawings) do
+            if d then
+                for _, obj in pairs(d) do
+                    if obj then 
+                        obj.Visible = false
+                        obj:Remove() 
+                    end
+                end
+            end
         end
         espDrawings = {}
     end
 end)
 
--- Loop Gambar ESP Box
 RunService.RenderStepped:Connect(function()
     if not espBoxActive or not Drawing then return end
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local char = player.Character
-            -- Cari titik pusat karakter (mendukung pemain yang lagi nyamar jadi barang)
             local rootPart = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
             local humanoid = char:FindFirstChild("Humanoid")
             
@@ -603,7 +582,6 @@ RunService.RenderStepped:Connect(function()
                 local pos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
                 
                 if onScreen then
-                    -- Inisialisasi objek Drawing jika belum ada
                     if not espDrawings[player] then
                         espDrawings[player] = {
                             Box = Drawing.new("Square"),
@@ -612,72 +590,56 @@ RunService.RenderStepped:Connect(function()
                             Distance = Drawing.new("Text"),
                             Tracer = Drawing.new("Line")
                         }
-                        
                         local d = espDrawings[player]
                         d.Box.Thickness = 1
                         d.Box.Color = Color3.fromRGB(255, 0, 0)
                         d.Box.Filled = false
-                        
                         d.Name.Size = 14
                         d.Name.Center = true
                         d.Name.Outline = true
                         d.Name.Color = Color3.fromRGB(255, 255, 255)
-                        
                         d.Health.Size = 12
                         d.Health.Center = true
                         d.Health.Outline = true
-                        d.Health.Color = Color3.fromRGB(50, 255, 50)
-                        
                         d.Distance.Size = 12
                         d.Distance.Center = true
                         d.Distance.Outline = true
                         d.Distance.Color = Color3.fromRGB(200, 200, 200)
-                        
                         d.Tracer.Thickness = 1
                         d.Tracer.Color = Color3.fromRGB(255, 255, 255)
                     end
                     
                     local d = espDrawings[player]
-                    
-                    -- Hitung ukuran Box berdasarkan jarak kamera
                     local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and (Camera.CFrame.Position - rootPart.Position).Magnitude or 0
                     local scale = math.clamp(1000 / distance, 20, 200)
-                    
                     local height = scale
                     local width = scale / 2
-                    
                     local x = pos.X - (width / 2)
                     local y = pos.Y - (height / 2)
                     
-                    -- Update Box
                     d.Box.Size = Vector2.new(width, height)
                     d.Box.Position = Vector2.new(x, y)
                     d.Box.Visible = true
                     
-                    -- Update Name
                     d.Name.Text = player.Name
                     d.Name.Position = Vector2.new(pos.X, y - 16)
                     d.Name.Visible = true
                     
-                    -- Update Health
                     local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
                     d.Health.Text = "HP: " .. healthPercent .. "%"
                     d.Health.Position = Vector2.new(pos.X, y + height + 2)
                     d.Health.Color = Color3.fromRGB(255 - (healthPercent * 2.55), healthPercent * 2.55, 0)
                     d.Health.Visible = true
                     
-                    -- Update Distance
                     d.Distance.Text = "[" .. math.floor(distance) .. "m]"
                     d.Distance.Position = Vector2.new(pos.X, y + height + 16)
                     d.Distance.Visible = true
                     
-                    -- Update Tracer (Garis dari bawah tengah layar)
                     d.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
                     d.Tracer.To = Vector2.new(pos.X, pos.Y)
                     d.Tracer.Visible = true
                     
                 else
-                    -- Sembunyikan jika keluar layar
                     if espDrawings[player] then
                         for _, obj in pairs(espDrawings[player]) do
                             obj.Visible = false
@@ -689,11 +651,13 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Hapus gambar jika player keluar dari game
 Players.PlayerRemoving:Connect(function(player)
     if espDrawings[player] then
         for _, obj in pairs(espDrawings[player]) do
-            if obj then obj:Remove() end
+            if obj then 
+                obj.Visible = false
+                obj:Remove() 
+            end
         end
         espDrawings[player] = nil
     end
