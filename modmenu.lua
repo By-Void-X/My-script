@@ -1,7 +1,9 @@
 --[[
     ByVoid — No system is safe
-    update: FLING dihapus, diganti GOD MODE (kebal mati / dewa)
-    semua fitur lain UTUH:
+    update:
+      - GOD MODE + tag "Map Support" (deteksi otomatis)
+      - FULLBRIGHT (Lighting override + auto re-apply)
+    semua fitur lama UTUH:
       jump tahan, fly HP, speed, ESP brutal, noclip, wallhack glow,
       spinbot, tp
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
@@ -15,6 +17,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
 local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -32,12 +35,19 @@ local State = {
     NoclipEnabled = false, WallhackGlowEnabled = false,
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {}, savedCollide = {}, noclipConn = nil,
-    -- spinbot
     SpinBotEnabled = false, SpinBotSpeed = 20, spinConn = nil,
     -- god mode
-    GodModeEnabled = false, godConn = nil, savedHealth = nil, savedMaxHealth = nil,
+    GodModeEnabled = false, godConn = nil, godHealthConn = nil,
+    savedHealth = nil, savedMaxHealth = nil,
+    godSupportStatus = "belum dites", godTestResult = nil, godTestDone = false,
+    -- fullbright
+    FullbrightEnabled = false, fbConn = nil,
+    fbSaved = nil,
     SelectedPlayer = nil,
 }
+
+-- referensi label god support (diisi setelah UI)
+local GodSupportLabel = nil
 
 -- ============================================================
 -- UTILS
@@ -52,7 +62,7 @@ local function getHum()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 local function notify(t, c)
-    Rayfield:Notify({ Title = t, Content = c, Duration = 3 })
+    Rayfield:Notify({ Title = t, Content = c, Duration = 4 })
 end
 
 local function getPlayerRoot(p)
@@ -70,6 +80,13 @@ local function getPlayerRoot(p)
         end
     end
     return nil, nil
+end
+
+local function setGodSupportLabel(txt)
+    State.godSupportStatus = txt
+    if GodSupportLabel then
+        GodSupportLabel:Set(txt)
+    end
 end
 
 -- ============================================================
@@ -557,15 +574,95 @@ local function stopSpinBot()
 end
 
 -- ============================================================
--- 5D. GOD MODE — kebal mati / dewa
+-- 5D. GOD MODE + MAP SUPPORT TEST
 -- ============================================================
+local function runGodModeTest()
+    setGodSupportLabel("testing...")
+    task.spawn(function()
+        local hum = getHum()
+        if not hum then
+            setGodSupportLabel("no humanoid")
+            return
+        end
+
+        local origMax = hum.MaxHealth
+        local origHealth = hum.Health
+        local origStateEnabled = nil
+        pcall(function()
+            origStateEnabled = hum:GetStateEnabled(Enum.HumanoidStateType.Dead)
+        end)
+
+        -- test 1: MaxHealth bisa di-set?
+        local maxSetOk = pcall(function() hum.MaxHealth = math.huge end)
+        task.wait(0.2)
+        local maxHeld = (hum.MaxHealth == math.huge)
+
+        -- test 2: Health bisa di-set?
+        local healthSetOk = pcall(function() hum.Health = math.huge end)
+        task.wait(0.2)
+        local healthHeld = (hum.Health == math.huge)
+
+        -- test 3: SetStateEnabled Dead false berhasil?
+        local stateSetOk = pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        end)
+        task.wait(0.1)
+        local stateHeld = false
+        pcall(function()
+            stateHeld = (hum:GetStateEnabled(Enum.HumanoidStateType.Dead) == false)
+        end)
+
+        -- test 4: coba damage kecil, cek health balik?
+        local damageOk = false
+        if healthHeld then
+            damageOk = pcall(function() hum:TakeDamage(10) end)
+        end
+        task.wait(0.3)
+        local healedBack = healthHeld and (hum.Health >= hum.MaxHealth - 1)
+
+        -- restore dulu sebelum simpulin
+        pcall(function()
+            hum.MaxHealth = origMax
+            hum.Health = origHealth
+        end)
+        if origStateEnabled ~= nil then
+            pcall(function()
+                hum:SetStateEnabled(Enum.HumanoidStateType.Dead, origStateEnabled)
+            end)
+        end
+
+        -- simpulin hasil
+        local score = 0
+        if maxSetOk and maxHeld then score = score + 1 end
+        if healthSetOk and healthHeld then score = score + 1 end
+        if stateSetOk and stateHeld then score = score + 1 end
+        if healedBack then score = score + 1 end
+
+        local txt
+        if score >= 4 then
+            txt = "SUPPORT PENUH (4/4) — god mode jalan di map ini"
+        elseif score == 3 then
+            txt = "SUPPORT TINGGI (3/4) — god mode jalan, damage sesaat mungkin"
+        elseif score == 2 then
+            txt = "SUPPORT PARSIAL (2/4) — health bisa bolong kalau server reset"
+        elseif score == 1 then
+            txt = "SUPPORT RENDAH (1/4) — god mode lemah, game server-authoritative"
+        else
+            txt = "TIDAK SUPPORT (0/4) — game kunci health total"
+        end
+        setGodSupportLabel(txt)
+        State.godTestDone = true
+        State.godTestResult = score
+        notify("ByVoid God Mode", txt)
+    end)
+end
+
 local function applyGodMode(hum)
     if not hum then return end
     if State.savedHealth == nil then State.savedHealth = hum.Health end
     if State.savedMaxHealth == nil then State.savedMaxHealth = hum.MaxHealth end
     hum.MaxHealth = math.huge
     hum.Health = math.huge
-    -- cegah state Dead
     pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
 end
 
@@ -585,12 +682,12 @@ local function startGodMode()
         end
     end)
 
-    -- pas health berubah, paksa balik ke max
+    -- HealthChanged listener per karakter
     local char = getChar()
     if char then
         local h = char:FindFirstChildOfClass("Humanoid")
-        if h then
-            h.HealthChanged:Connect(function(newHealth)
+        if h and not State.godHealthConn then
+            State.godHealthConn = h.HealthChanged:Connect(function(newHealth)
                 if not State.GodModeEnabled then return end
                 if newHealth < h.MaxHealth then
                     h.Health = h.MaxHealth
@@ -598,11 +695,18 @@ local function startGodMode()
             end)
         end
     end
+
+    -- auto test setelah 1 detik aktif
+    if not State.godTestDone then
+        task.wait(1)
+        if State.GodModeEnabled then runGodModeTest() end
+    end
 end
 
 local function stopGodMode()
     State.GodModeEnabled = false
     if State.godConn then State.godConn:Disconnect(); State.godConn = nil end
+    if State.godHealthConn then State.godHealthConn:Disconnect(); State.godHealthConn = nil end
     local hum = getHum()
     if hum then
         if State.savedMaxHealth then hum.MaxHealth = State.savedMaxHealth end
@@ -613,15 +717,74 @@ local function stopGodMode()
     State.savedMaxHealth = nil
 end
 
--- re-apply god mode saat respawn
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     if State.GodModeEnabled then
         State.savedHealth = nil
         State.savedMaxHealth = nil
+        State.godHealthConn = nil
         startGodMode()
     end
 end)
+
+-- ============================================================
+-- 5E. FULLBRIGHT
+-- ============================================================
+local function saveLighting()
+    State.fbSaved = {
+        Brightness = Lighting.Brightness,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        GlobalShadows = Lighting.GlobalShadows,
+        FogEnd = Lighting.FogEnd,
+        FogStart = Lighting.FogStart,
+        ClockTime = Lighting.ClockTime,
+        ExposureCompensation = Lighting.ExposureCompensation,
+        EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+    }
+end
+
+local function applyFullbright()
+    Lighting.Brightness = 2
+    Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+    Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 1e6
+    Lighting.FogStart = 1e6
+    Lighting.ClockTime = 12
+    Lighting.ExposureCompensation = 0.5
+    Lighting.EnvironmentDiffuseScale = 1
+    Lighting.EnvironmentSpecularScale = 1
+end
+
+local function restoreLighting()
+    if not State.fbSaved then return end
+    for k, v in pairs(State.fbSaved) do
+        pcall(function() Lighting[k] = v end)
+    end
+    State.fbSaved = nil
+end
+
+local function startFullbright()
+    if not State.fbSaved then saveLighting() end
+    State.FullbrightEnabled = true
+    applyFullbright()
+    if State.fbConn then State.fbConn:Disconnect() end
+    -- loop re-apply tiap 2 detik biar nggak reset sama game
+    State.fbConn = task.spawn(function()
+        while State.FullbrightEnabled do
+            task.wait(2)
+            if State.FullbrightEnabled then applyFullbright() end
+        end
+    end)
+end
+
+local function stopFullbright()
+    State.FullbrightEnabled = false
+    if State.fbConn then task.cancel(State.fbConn); State.fbConn = nil end
+    restoreLighting()
+end
 
 -- ============================================================
 -- 6. TP
@@ -711,8 +874,17 @@ local FunTab = Window:CreateTab("Fun", 4483362458)
 FunTab:CreateSection("God Mode (Kebal Mati)")
 FunTab:CreateToggle({ Name = "Enable God Mode", CurrentValue = false, Flag = "God",
     Callback = function(v) if v then startGodMode() else stopGodMode() end end })
-FunTab:CreateParagraph({ Title = "Info",
-    Content = "Health dipaksa max + state Dead dimatiin. Kalau game server-authoritative ketat, health bisa balik — tergantung game." })
+GodSupportLabel = FunTab:CreateLabel("Map Support: belum dites")
+FunTab:CreateButton({ Name = "Test Map Support Sekarang", Callback = function()
+    if not State.GodModeEnabled then
+        notify("ByVoid", "aktifkan God Mode dulu")
+        return
+    end
+    State.godTestDone = false
+    runGodModeTest()
+end })
+FunTab:CreateParagraph({ Title = "Info Map Support",
+    Content = "Tag muncul setelah god mode aktif 1 detik. Penuh = health & dead state client-trust. Tidak support = game kunci health dari server." })
 
 FunTab:CreateSection("Spinbot")
 FunTab:CreateToggle({ Name = "Enable Spinbot", CurrentValue = false, Flag = "Spin",
@@ -765,6 +937,12 @@ VisualTab:CreateColorPicker({ Name = "ESP Color", Color = Color3.fromRGB(0, 255,
         end
     end })
 
+VisualTab:CreateSection("Fullbright")
+VisualTab:CreateToggle({ Name = "Enable Fullbright", CurrentValue = false, Flag = "Fullbright",
+    Callback = function(v) if v then startFullbright() else stopFullbright() end end })
+VisualTab:CreateParagraph({ Title = "Info Fullbright",
+    Content = "Override Lighting: brightness max, ambient putih, no fog, no shadow. Auto re-apply tiap 2s biar nggak reset game." })
+
 VisualTab:CreateSection("Wallhack (Dipisah)")
 VisualTab:CreateToggle({ Name = "Wallhack Noclip (Tembus Semua)", CurrentValue = false, Flag = "Noclip",
     Callback = function(v) State.NoclipEnabled = v; if v then startNoclip() else stopNoclip() end end })
@@ -811,4 +989,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     if State.NoclipEnabled then startNoclip() end
 end)
 
-notify("ByVoid", "No system is safe — god mode + spinbot loaded")
+notify("ByVoid", "No system is safe — god mode tag + fullbright loaded")
