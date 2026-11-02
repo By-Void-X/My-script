@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Resizable & Draggable Icon)
-  Fitur: Draggable Icon, Resizable UI, Dropdown TP, God Mode, Speed, Noclip, Fly
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Dual ESP System)
+  Fitur: Draggable Icon, Resizable UI, TP List, God Mode, Speed, Noclip, Fly, Dual ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- ==========================================
 -- 1. SETUP UI (MODERN DESIGN)
@@ -28,7 +29,6 @@ ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.Name = "ModMenu_GUI"
 ScreenGui.ResetOnSpawn = false
 
--- Tombol Buka Menu (Ikon Bulat)
 local OpenIcon = Instance.new("TextButton")
 OpenIcon.Parent = ScreenGui
 OpenIcon.BackgroundColor3 = Colors.TitleBar
@@ -43,7 +43,6 @@ Instance.new("UICorner", OpenIcon).CornerRadius = UDim.new(1, 0)
 Instance.new("UIStroke", OpenIcon).Color = Colors.Accent
 Instance.new("UIStroke", OpenIcon).Thickness = 2
 
--- Frame Utama Menu
 local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Colors.Background
@@ -53,7 +52,6 @@ MainFrame.Active = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(60, 60, 70)
 
--- Title Bar (Area Geser Menu)
 local TitleBar = Instance.new("Frame")
 TitleBar.Parent = MainFrame
 TitleBar.BackgroundColor3 = Colors.TitleBar
@@ -89,7 +87,6 @@ CloseBtn.TextColor3 = Colors.Text
 CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
 
--- Tombol Resize (Ubah Ukuran Menu)
 local ResizeGrip = Instance.new("TextButton")
 ResizeGrip.Parent = MainFrame
 ResizeGrip.BackgroundTransparency = 1
@@ -101,17 +98,15 @@ ResizeGrip.TextColor3 = Colors.Accent
 ResizeGrip.TextSize = 24
 ResizeGrip.ZIndex = 2
 
--- Logika Buka/Tutup Menu
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     OpenIcon.Visible = true
 end)
 
--- Logika Geser Ikon Bulat (OpenIcon)
+-- Logika Geser Ikon Bulat
 local iconDragging = false
 local iconDragStart, iconStartPos
 local iconMoved = false
-
 OpenIcon.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         iconDragging = true
@@ -121,7 +116,6 @@ OpenIcon.InputBegan:Connect(function(input)
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then 
                 iconDragging = false 
-                -- Jika tidak digeser jauh, anggap sebagai klik (buka menu)
                 if not iconMoved then
                     MainFrame.Visible = true
                     OpenIcon.Visible = false
@@ -130,13 +124,12 @@ OpenIcon.InputBegan:Connect(function(input)
         end)
     end
 end)
-
 OpenIcon.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
         if iconDragging then
             local delta = input.Position - iconDragStart
             if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
-                iconMoved = true -- Tandai bahwa ikon sedang digeser, bukan diklik
+                iconMoved = true
             end
             if iconMoved then
                 OpenIcon.Position = UDim2.new(iconStartPos.X.Scale, iconStartPos.X.Offset + delta.X, iconStartPos.Y.Scale, iconStartPos.Y.Offset + delta.Y)
@@ -145,7 +138,7 @@ OpenIcon.InputChanged:Connect(function(input)
     end
 end)
 
--- Logika Geser Menu Utama (TitleBar)
+-- Logika Geser Menu
 local dragging, dragInput, dragStart, startPos
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -167,7 +160,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Logika Ubah Ukuran Menu (ResizeGrip)
+-- Logika Resize Menu
 local resizing = false
 local resizeStart, resizeStartSize
 ResizeGrip.InputBegan:Connect(function(input)
@@ -180,18 +173,15 @@ ResizeGrip.InputBegan:Connect(function(input)
         end)
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - resizeStart
-        -- Batas minimal 250x300, maksimal 500x600
         local newWidth = math.clamp(resizeStartSize.X + delta.X, 250, 500)
         local newHeight = math.clamp(resizeStartSize.Y + delta.Y, 300, 600)
         MainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
     end
 end)
 
--- Area Scroll
 local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Parent = MainFrame
 ScrollingFrame.BackgroundTransparency = 1
@@ -310,7 +300,6 @@ end
 
 -- [ SECTION 1: TELEPORT (DROPDOWN) ]
 CreateSection("👤 Teleport Pemain")
-
 local TPDropdownBtn = Instance.new("TextButton")
 TPDropdownBtn.Parent = ScrollingFrame
 TPDropdownBtn.BackgroundColor3 = Colors.Section
@@ -395,7 +384,6 @@ task.spawn(RefreshPlayerList)
 
 -- [ SECTION 2: MOVEMENT ]
 CreateSection("🏃 Movement")
-
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
     currentWalkSpeed = val
@@ -536,25 +524,182 @@ CreateToggle("God Mode (Auto Heal)", function(state)
     end
 end)
 
-local espActive = false
-local espObjects = {}
-CreateToggle("ESP (Highlight)", function(state)
-    espActive = state
-    if state then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
+-- ==========================================
+-- 3. FITUR DUAL ESP
+-- ==========================================
+CreateSection("👁️ ESP System (2 Types)")
+
+-- A. ESP HIGHLIGHT (Growing / Berubah Warna)
+local espHighlightActive = false
+local espHighlights = {}
+
+local function UpdateESPHighlight()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            if not espHighlights[player] then
                 local highlight = Instance.new("Highlight")
                 highlight.Parent = player.Character
-                highlight.FillColor = Colors.ButtonOff
+                highlight.FillColor = Colors.ButtonOn
                 highlight.OutlineColor = Colors.Text
-                table.insert(espObjects, highlight)
+                highlight.FillTransparency = 0.5
+                espHighlights[player] = highlight
             end
         end
+    end
+end
+
+CreateToggle("ESP Highlight (Growing)", function(state)
+    espHighlightActive = state
+    if state then
+        UpdateESPHighlight()
+        -- Update otomatis saat player respawn/berubah objek (Hide and Seek)
+        Players.PlayerAdded:Connect(function(p)
+            p.CharacterAdded:Connect(function()
+                task.wait(0.5)
+                if espHighlightActive then UpdateESPHighlight() end
+            end)
+        end)
     else
-        for _, highlight in pairs(espObjects) do
-            if highlight then highlight:Destroy() end
+        for _, hl in pairs(espHighlights) do
+            if hl then hl:Destroy() end
         end
-        espObjects = {}
+        espHighlights = {}
+    end
+end)
+
+-- B. ESP BOX (Garis, Nama, Jarak, Darah)
+local espBoxActive = false
+local espDrawings = {}
+
+-- Inisialisasi Drawing (Hanya jalan jika executor mendukung)
+local Drawing = Drawing or nil
+if not Drawing then
+    warn("Executor tidak mendukung Drawing API. ESP Box tidak akan berfungsi.")
+end
+
+CreateToggle("ESP Box (Line, Text, Health)", function(state)
+    espBoxActive = state
+    if not state then
+        -- Hapus semua gambar jika dimatikan
+        for _, d in pairs(espDrawings) do
+            if d then d:Remove() end
+        end
+        espDrawings = {}
+    end
+end)
+
+-- Loop Gambar ESP Box
+RunService.RenderStepped:Connect(function()
+    if not espBoxActive or not Drawing then return end
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            -- Cari titik pusat karakter (mendukung pemain yang lagi nyamar jadi barang)
+            local rootPart = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+            local humanoid = char:FindFirstChild("Humanoid")
+            
+            if rootPart and humanoid and humanoid.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+                
+                if onScreen then
+                    -- Inisialisasi objek Drawing jika belum ada
+                    if not espDrawings[player] then
+                        espDrawings[player] = {
+                            Box = Drawing.new("Square"),
+                            Name = Drawing.new("Text"),
+                            Health = Drawing.new("Text"),
+                            Distance = Drawing.new("Text"),
+                            Tracer = Drawing.new("Line")
+                        }
+                        
+                        local d = espDrawings[player]
+                        d.Box.Thickness = 1
+                        d.Box.Color = Color3.fromRGB(255, 0, 0)
+                        d.Box.Filled = false
+                        
+                        d.Name.Size = 14
+                        d.Name.Center = true
+                        d.Name.Outline = true
+                        d.Name.Color = Color3.fromRGB(255, 255, 255)
+                        
+                        d.Health.Size = 12
+                        d.Health.Center = true
+                        d.Health.Outline = true
+                        d.Health.Color = Color3.fromRGB(50, 255, 50)
+                        
+                        d.Distance.Size = 12
+                        d.Distance.Center = true
+                        d.Distance.Outline = true
+                        d.Distance.Color = Color3.fromRGB(200, 200, 200)
+                        
+                        d.Tracer.Thickness = 1
+                        d.Tracer.Color = Color3.fromRGB(255, 255, 255)
+                    end
+                    
+                    local d = espDrawings[player]
+                    
+                    -- Hitung ukuran Box berdasarkan jarak kamera
+                    local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and (Camera.CFrame.Position - rootPart.Position).Magnitude or 0
+                    local scale = math.clamp(1000 / distance, 20, 200)
+                    
+                    local height = scale
+                    local width = scale / 2
+                    
+                    local x = pos.X - (width / 2)
+                    local y = pos.Y - (height / 2)
+                    
+                    -- Update Box
+                    d.Box.Size = Vector2.new(width, height)
+                    d.Box.Position = Vector2.new(x, y)
+                    d.Box.Visible = true
+                    
+                    -- Update Name
+                    d.Name.Text = player.Name
+                    d.Name.Position = Vector2.new(pos.X, y - 16)
+                    d.Name.Visible = true
+                    
+                    -- Update Health
+                    local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
+                    d.Health.Text = "HP: " .. healthPercent .. "%"
+                    d.Health.Position = Vector2.new(pos.X, y + height + 2)
+                    d.Health.Color = Color3.fromRGB(255 - (healthPercent * 2.55), healthPercent * 2.55, 0)
+                    d.Health.Visible = true
+                    
+                    -- Update Distance
+                    d.Distance.Text = "[" .. math.floor(distance) .. "m]"
+                    d.Distance.Position = Vector2.new(pos.X, y + height + 16)
+                    d.Distance.Visible = true
+                    
+                    -- Update Tracer (Garis dari bawah tengah layar)
+                    d.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    d.Tracer.To = Vector2.new(pos.X, pos.Y)
+                    d.Tracer.Visible = true
+                    
+                else
+                    -- Sembunyikan jika keluar layar
+                    if espDrawings[player] then
+                        for _, obj in pairs(espDrawings[player]) do
+                            obj.Visible = false
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Hapus gambar jika player keluar dari game
+Players.PlayerRemoving:Connect(function(player)
+    if espDrawings[player] then
+        for _, obj in pairs(espDrawings[player]) do
+            if obj then obj:Remove() end
+        end
+        espDrawings[player] = nil
+    end
+    if espHighlights[player] then
+        if espHighlights[player] then espHighlights[player]:Destroy() end
+        espHighlights[player] = nil
     end
 end)
 
