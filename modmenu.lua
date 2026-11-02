@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Fixed Jump & ESP)
-  Fitur: Draggable UI, TP, Speed, Noclip (Gravity Lock), Fly, Dual ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Undetectable Noclip)
+  Fitur: Draggable UI, TP, Speed, Super Noclip (Anti-TP), Fly, Jump, Dual ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -382,6 +382,8 @@ task.spawn(RefreshPlayerList)
 
 
 CreateSection("🏃 Movement")
+
+-- 1. WALK SPEED
 local currentWalkSpeed = 16
 CreateSlider("Walk Speed", 16, 200, 16, function(val)
     currentWalkSpeed = val
@@ -391,6 +393,33 @@ CreateSlider("Walk Speed", 16, 200, 16, function(val)
     end
 end)
 
+-- 2. MULTIPLE JUMP
+local jumpActive = false
+local maxJumps = 999
+local jumpCount = 0
+
+CreateToggle("Multiple Jump", function(state)
+    jumpActive = state
+    if not state then jumpCount = 0 end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if jumpActive then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+            local humanoid = char.Humanoid
+            if humanoid:GetState() == Enum.HumanoidStateType.Landed or humanoid:GetState() == Enum.HumanoidStateType.Running then
+                jumpCount = 0
+            end
+            if jumpCount < maxJumps then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                jumpCount = jumpCount + 1
+            end
+        end
+    end
+end)
+
+-- 3. SUPER NOCLIP (UNDETECTABLE & JUMP SAFE)
 local noclipSpeed = 2
 CreateSlider("Noclip Push Speed", 1, 5, 2, function(val)
     noclipSpeed = val
@@ -398,19 +427,30 @@ end)
 
 local wallHackActive = false
 local noclipConnection
-CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
+local noclipVelocity
+
+CreateToggle("Super Noclip (Anti-TP)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    
+    if wallHackActive and hrp then
+        -- Gunakan BodyVelocity alih-alih CFrame paksa (lebih tidak terdeteksi)
+        noclipVelocity = Instance.new("BodyVelocity")
+        noclipVelocity.Parent = hrp
+        noclipVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        noclipVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    if wallHackActive then
-        noclipConnection = RunService.RenderStepped:Connect(function(deltaTime)
+        noclipConnection = RunService.RenderStepped:Connect(function()
             if not wallHackActive then return end
             local myChar = LocalPlayer.Character
             if myChar then
-                local hrp = myChar:FindFirstChild("HumanoidRootPart")
+                local myHrp = myChar:FindFirstChild("HumanoidRootPart")
                 local humanoid = myChar:FindFirstChild("Humanoid")
-                if hrp and humanoid then
+                
+                if myHrp and humanoid then
+                    -- Matikan semua tabrakan & Touch
                     for _, part in pairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") then
                             part.CanCollide = false
@@ -418,22 +458,26 @@ CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
                             part.CanTouch = false
                         end
                     end
+                    
+                    -- Trik Anti-Cheat: Paksa status lantai jadi Plastik agar tidak dianggap terbang
+                    humanoid.FloorMaterial = Enum.Material.Plastic
+                    
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
-                        local speed = currentWalkSpeed * deltaTime
-                        hrp.CFrame = hrp.CFrame + (moveDir * speed)
-                    end
-                    
-                    -- Gravity Lock (Mencegah TP keluar di Brookhaven saat tidak melompat)
-                    -- Jika karakter tidak melompat, tarik sedikit ke bawah agar dianggap menapak tanah
-                    if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
-                        hrp.Velocity = Vector3.new(hrp.Velocity.X, -15, hrp.Velocity.Z)
+                        -- Bergerak dengan kecepatan normal
+                        noclipVelocity.Velocity = moveDir * currentWalkSpeed
+                    else
+                        -- Jika diam, biarkan gravitasi bekerja (turun perlahan)
+                        noclipVelocity.Velocity = Vector3.new(0, myHrp.Velocity.Y, 0)
                     end
                 end
             end
         end)
     else
         if noclipConnection then noclipConnection:Disconnect() end
+        if noclipVelocity then noclipVelocity:Destroy() end
+        
+        -- Kembalikan tabrakan normal
         local myChar = LocalPlayer.Character
         if myChar then
             for _, part in pairs(myChar:GetDescendants()) do
@@ -447,8 +491,7 @@ CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
     end
 end)
 
--- Lompat sudah dikembalikan (tidak diblokir)
-
+-- 4. FLY
 local flySpeed = 50
 CreateSlider("Fly Speed", 10, 160, 50, function(val)
     flySpeed = val
@@ -456,7 +499,7 @@ end)
 
 local flyActive = false
 local flyConnection
-local bodyVelocity
+local flyVelocity
 CreateToggle("Fly (Geser Kamera)", function(state)
     flyActive = state
     local char = LocalPlayer.Character
@@ -465,47 +508,25 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     if not hrp then return end
 
     if flyActive then
-        bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Parent = hrp
-        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyVelocity = Instance.new("BodyVelocity")
+        flyVelocity.Parent = hrp
+        flyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        flyVelocity.Velocity = Vector3.new(0, 0, 0)
         local camera = workspace.CurrentCamera
         flyConnection = RunService.RenderStepped:Connect(function()
-            if not flyActive or not bodyVelocity or not bodyVelocity.Parent then return end
+            if not flyActive or not flyVelocity or not flyVelocity.Parent then return end
             local moveDir = camera.CFrame.LookVector
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
                 moveDir = moveDir + Vector3.new(0, 1, 0)
             end
-            bodyVelocity.Velocity = moveDir * flySpeed
+            flyVelocity.Velocity = moveDir * flySpeed
         end)
     else
         if flyConnection then flyConnection:Disconnect() end
-        if bodyVelocity then bodyVelocity:Destroy() end
+        if flyVelocity then flyVelocity:Destroy() end
     end
 end)
 
-local jumpActive = false
-local maxJumps = 999
-local jumpCount = 0
-CreateToggle("Multiple Jump", function(state)
-    jumpActive = state
-    if not state then jumpCount = 0 end
-end)
-UserInputService.JumpRequest:Connect(function()
-    if jumpActive then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            local humanoid = char.Humanoid
-            if humanoid:GetState() == Enum.HumanoidStateType.Landed or humanoid:GetState() == Enum.HumanoidStateType.Running then
-                jumpCount = 0
-            end
-            if jumpCount < maxJumps then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                jumpCount = jumpCount + 1
-            end
-        end
-    end
-end)
 
 CreateSection("🛡️ Survival & Misc")
 local godModeActive = false
@@ -529,7 +550,7 @@ CreateToggle("God Mode (Auto Heal)", function(state)
 end)
 
 -- ==========================================
--- 3. FITUR DUAL ESP (CLEAN VERSION)
+-- 3. FITUR DUAL ESP
 -- ==========================================
 CreateSection("👁️ ESP System (2 Types)")
 
