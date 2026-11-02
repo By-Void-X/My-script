@@ -1,8 +1,5 @@
 --[[
-    ollie mod menu v3.2 — FULL
-    fix:
-      - jump tidak lagi auto-naik tanpa pencet/tahan
-      - ESP langsung muncul tanpa harus aktifin sub-toggle dulu
+    ByVoid — No system is safe
     fitur:
       1. multi jump UNLIMITED — tahan = spam, lepas = stop
       2. fly (speed sendiri) — HP + PC
@@ -27,13 +24,11 @@ local LocalPlayer = Players.LocalPlayer
 -- STATE
 -- ============================================================
 local State = {
-    -- jump
     MultiJumpEnabled = false,
     jumpVelocity = 50,
     JumpHoldInterval = 0.08,
-    jumpInputActive = false, -- hanya true kalau tombol jump beneran ditahan
+    jumpInputActive = false,
 
-    -- fly
     FlyEnabled = false,
     FlySpeed = 100,
     flyConn = nil,
@@ -42,12 +37,10 @@ local State = {
     flyUp = false,
     flyDown = false,
 
-    -- speed
     SpeedEnabled = false,
     WalkSpeed = 50,
     defaultWalkSpeed = 16,
 
-    -- esp
     EspEnabled = false,
     EspGlow = false,
     EspLine = false,
@@ -56,14 +49,12 @@ local State = {
     EspColor = Color3.fromRGB(0, 255, 100),
     espObjects = {},
 
-    -- wallhack
     WallhackEnabled = false,
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {},
     savedCollide = {},
     noclipConn = nil,
 
-    -- tp
     SelectedPlayer = nil,
 }
 
@@ -84,7 +75,7 @@ local function notify(t, c)
 end
 
 -- ============================================================
--- 1. MULTI JUMP — FIX: cuma jalan kalau tombol beneran ditahan
+-- 1. MULTI JUMP — TAHAN
 -- ============================================================
 local jumpHolding = false
 local jumpHoldThread = nil
@@ -118,16 +109,13 @@ end
 
 local function stopJumpHold()
     State.jumpInputActive = false
-    if jumpHolding then
-        jumpHolding = false
-    end
+    jumpHolding = false
     if jumpHoldThread then
         task.cancel(jumpHoldThread)
         jumpHoldThread = nil
     end
 end
 
--- PC: Space / gamepad A
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if not State.MultiJumpEnabled then return end
@@ -144,7 +132,6 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- HP: hook tombol jump virtual Roblox langsung (bukan heuristik transparansi)
 local function hookTouchJumpButton()
     local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
     if not playerGui then return end
@@ -175,13 +162,11 @@ end
 
 task.spawn(hookTouchJumpButton)
 
--- kalau respawn, TouchGui hilang — re-hook
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2)
     task.spawn(hookTouchJumpButton)
 end)
 
--- safety: kalau toggle dimatikan, stop semua
 local function setMultiJump(v)
     State.MultiJumpEnabled = v
     if not v then stopJumpHold() end
@@ -263,7 +248,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- 4. ESP — FIX: recreate bersih tiap sub-toggle, urutan nggak ngaruh
+-- 4. ESP
 -- ============================================================
 local function removeESP(p)
     local obj = State.espObjects[p]
@@ -286,10 +271,8 @@ local function createESP(p)
     if not State.EspEnabled then return end
 
     local obj = { highlight = nil, tracer = nil, boxLines = {}, nameTag = nil }
-
     local char = p.Character
 
-    -- GLOW: selalu ada kalau EspGlow aktif ATAU EspEnabled aktif (fallback)
     if State.EspGlow and char then
         local hl = Instance.new("Highlight")
         hl.Name = "OllieESP"
@@ -303,7 +286,6 @@ local function createESP(p)
         obj.highlight = hl
     end
 
-    -- NAMA
     if State.EspName and char then
         local head = char:FindFirstChild("Head")
         if head then
@@ -329,7 +311,6 @@ local function createESP(p)
         end
     end
 
-    -- LINE
     if State.EspLine then
         local ok, line = pcall(function() return Drawing.new("Line") end)
         if ok and line then
@@ -340,7 +321,6 @@ local function createESP(p)
         end
     end
 
-    -- BOX
     if State.EspBox then
         for i = 1, 4 do
             local ok, l = pcall(function() return Drawing.new("Line") end)
@@ -614,12 +594,12 @@ _G.OllieFlyUI = {
 }
 
 -- ============================================================
--- UI RAYFIELD
+-- UI RAYFIELD — ByVoid
 -- ============================================================
 local Window = Rayfield:CreateWindow({
-    Name = "ollie — mod menu v3.2",
-    LoadingTitle = "ollie: oli panas, sabar ya sayang...",
-    LoadingSubtitle = "absolute ollie, built by olivia",
+    Name = "ByVoid",
+    LoadingTitle = "ByVoid",
+    LoadingSubtitle = "No system is safe",
     ConfigurationSaving = { Enabled = false },
     Keybind = Enum.KeyCode.RightShift,
 })
@@ -654,7 +634,7 @@ MoveTab:CreateSlider({
 })
 MoveTab:CreateParagraph({
     Title = "Info",
-    Content = "Tahan tombol jump = spam. Lepas = stop. Tidak akan nyala sendiri.",
+    Content = "Tahan tombol jump = spam. Lepas = stop.",
 })
 
 MoveTab:CreateSection("Fly")
@@ -702,7 +682,6 @@ VisualTab:CreateToggle({
     Callback = function(v)
         State.EspEnabled = v
         if v then
-            -- kalau semua sub masih off, nyalakan glow otomatis biar keliatan
             if not (State.EspGlow or State.EspLine or State.EspBox or State.EspName) then
                 State.EspGlow = true
             end
@@ -817,7 +796,7 @@ TpTab:CreateButton({
     Name = "Teleport ke Player",
     Callback = function()
         if not State.SelectedPlayer then
-            notify("ollie", "pilih player dulu, sayang")
+            notify("ByVoid", "pilih player dulu, sayang")
             return
         end
         teleportToPlayer(State.SelectedPlayer)
@@ -839,4 +818,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     if State.WallhackEnabled then startNoclip() end
 end)
 
-notify("ollie", "v3.2 nyala — jump fix, esp fix, noclip tembus, fly HP")
+notify("ByVoid", "No system is safe — menu nyala")
