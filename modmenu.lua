@@ -1,12 +1,13 @@
 --[[
     ByVoid — No system is safe
-    fix: Enable ESP tidak lagi auto-aktifkan Glow di belakang UI
+    update: wallhack noclip & wallhack glow dipisah jadi 2 toggle
     fitur:
       1. multi jump UNLIMITED — tahan = spam, lepas = stop
       2. fly (speed sendiri) — HP + PC
       3. speed player (custom)
       4. ESP (glow + line + box + nama) — default OFF, toggle sinkron
-      5. wallhack noclip (tembus SEMUA block) + visual
+      5. wallhack NOCLIP (tembus SEMUA block) — toggle sendiri
+         wallhack GLOW (Highlight AlwaysOnTop) — toggle sendiri
       6. tp ke player (dropdown list nama)
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
@@ -50,7 +51,9 @@ local State = {
     EspColor = Color3.fromRGB(0, 255, 100),
     espObjects = {},
 
-    WallhackEnabled = false,
+    -- wallhack dipisah
+    NoclipEnabled = false,          -- tembus fisik
+    WallhackGlowEnabled = false,    -- visual Highlight
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {},
     savedCollide = {},
@@ -59,7 +62,6 @@ local State = {
     SelectedPlayer = nil,
 }
 
--- referensi toggle UI (diisi setelah UI dibikin)
 local Toggles = {}
 
 -- ============================================================
@@ -252,7 +254,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- 4. ESP — SINKRON
+-- 4. ESP
 -- ============================================================
 local function removeESP(p)
     local obj = State.espObjects[p]
@@ -432,7 +434,7 @@ Players.PlayerRemoving:Connect(removeESP)
 RunService.RenderStepped:Connect(updateESP)
 
 -- ============================================================
--- 5. WALLHACK — NOCLIP + VISUAL (JANGAN DIUBAH)
+-- 5A. NOCLIP — tembus fisik (JANGAN DIUBAH)
 -- ============================================================
 local function setNoclipParts(char)
     if not char then return end
@@ -452,7 +454,7 @@ local function startNoclip()
 
     if State.noclipConn then State.noclipConn:Disconnect() end
     State.noclipConn = RunService.Stepped:Connect(function()
-        if not State.WallhackEnabled then return end
+        if not State.NoclipEnabled then return end
         local c = getChar()
         if not c then return end
         for _, part in ipairs(c:GetDescendants()) do
@@ -476,7 +478,10 @@ local function stopNoclip()
     State.savedCollide = {}
 end
 
-local function createWallhackVisual(p)
+-- ============================================================
+-- 5B. WALLHACK GLOW — visual Highlight
+-- ============================================================
+local function createWallhackGlow(p)
     if p == LocalPlayer then return end
     local char = p.Character
     if not char then return end
@@ -496,7 +501,7 @@ local function createWallhackVisual(p)
     State.wallhackObjects[p] = hl
 end
 
-local function removeWallhackVisual(p)
+local function removeWallhackGlow(p)
     local char = p.Character
     if char then
         local hl = char:FindFirstChild("OllieWH")
@@ -505,30 +510,31 @@ local function removeWallhackVisual(p)
     State.wallhackObjects[p] = nil
 end
 
-local function applyAllWallhack()
+local function applyAllWallhackGlow()
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then createWallhackVisual(p) end
+        if p ~= LocalPlayer then createWallhackGlow(p) end
     end
 end
 
-local function clearAllWallhack()
+local function clearAllWallhackGlow()
     for _, p in ipairs(Players:GetPlayers()) do
-        removeWallhackVisual(p)
+        removeWallhackGlow(p)
     end
     State.wallhackObjects = {}
 end
 
+-- re-apply glow pas player baru / respawn
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(0.5)
-        if State.WallhackEnabled then createWallhackVisual(p) end
+        if State.WallhackGlowEnabled then createWallhackGlow(p) end
     end)
 end)
 for _, p in ipairs(Players:GetPlayers()) do
     if p ~= LocalPlayer then
         p.CharacterAdded:Connect(function()
             task.wait(0.5)
-            if State.WallhackEnabled then createWallhackVisual(p) end
+            if State.WallhackGlowEnabled then createWallhackGlow(p) end
         end)
     end
 end
@@ -686,7 +692,6 @@ Toggles.Esp = VisualTab:CreateToggle({
     Callback = function(v)
         State.EspEnabled = v
         if v then
-            -- TIDAK auto-aktifkan Glow. Kalau semua sub off, kasih notif.
             if not (State.EspGlow or State.EspLine or State.EspBox or State.EspName) then
                 notify("ByVoid", "pilih dulu: Glow / Line / Box / Nama")
             end
@@ -750,24 +755,35 @@ VisualTab:CreateColorPicker({
     end,
 })
 
-VisualTab:CreateSection("Wallhack (Noclip Tembus Semua)")
-VisualTab:CreateToggle({
-    Name = "Enable Wallhack",
+VisualTab:CreateSection("Wallhack (Dipisah)")
+Toggles.Noclip = VisualTab:CreateToggle({
+    Name = "Wallhack Noclip (Tembus Semua)",
     CurrentValue = false,
-    Flag = "Wallhack",
+    Flag = "Noclip",
     Callback = function(v)
-        State.WallhackEnabled = v
+        State.NoclipEnabled = v
         if v then
             startNoclip()
-            applyAllWallhack()
         else
             stopNoclip()
-            clearAllWallhack()
+        end
+    end,
+})
+Toggles.WHGlow = VisualTab:CreateToggle({
+    Name = "Wallhack Glow (Visual)",
+    CurrentValue = false,
+    Flag = "WHGlow",
+    Callback = function(v)
+        State.WallhackGlowEnabled = v
+        if v then
+            applyAllWallhackGlow()
+        else
+            clearAllWallhackGlow()
         end
     end,
 })
 VisualTab:CreateColorPicker({
-    Name = "Wallhack Color",
+    Name = "Wallhack Glow Color",
     Color = Color3.fromRGB(255, 60, 60),
     Flag = "WHColor",
     Callback = function(color)
@@ -820,7 +836,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     stopJumpHold()
     applySpeed()
     State.savedCollide = {}
-    if State.WallhackEnabled then startNoclip() end
+    if State.NoclipEnabled then startNoclip() end
 end)
 
-notify("ByVoid", "No system is safe — menu nyala")
+notify("ByVoid", "No system is safe — noclip & glow dipisah")
