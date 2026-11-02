@@ -1,11 +1,14 @@
 --[[
-    ollie mod menu v3.1 — FULL
+    ollie mod menu v3.2 — FULL
+    fix:
+      - jump tidak lagi auto-naik tanpa pencet/tahan
+      - ESP langsung muncul tanpa harus aktifin sub-toggle dulu
     fitur:
-      1. multi jump UNLIMITED — mode TAHAN (spam selama ditahan)
+      1. multi jump UNLIMITED — tahan = spam, lepas = stop
       2. fly (speed sendiri) — HP + PC
       3. speed player (custom)
-      4. ESP (glow + line atas + box + nama) — DEFAULT OFF semua
-      5. wallhack noclip (tembus SEMUA block) + visual highlight
+      4. ESP (glow + line + box + nama) — default OFF
+      5. wallhack noclip (tembus SEMUA block) + visual
       6. tp ke player (dropdown list nama)
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
@@ -28,6 +31,7 @@ local State = {
     MultiJumpEnabled = false,
     jumpVelocity = 50,
     JumpHoldInterval = 0.08,
+    jumpInputActive = false, -- hanya true kalau tombol jump beneran ditahan
 
     -- fly
     FlyEnabled = false,
@@ -43,7 +47,7 @@ local State = {
     WalkSpeed = 50,
     defaultWalkSpeed = 16,
 
-    -- esp (default OFF semua)
+    -- esp
     EspEnabled = false,
     EspGlow = false,
     EspLine = false,
@@ -80,13 +84,14 @@ local function notify(t, c)
 end
 
 -- ============================================================
--- 1. MULTI JUMP UNLIMITED — MODE TAHAN
+-- 1. MULTI JUMP — FIX: cuma jalan kalau tombol beneran ditahan
 -- ============================================================
 local jumpHolding = false
 local jumpHoldThread = nil
 
 local function doJump()
     if not State.MultiJumpEnabled then return end
+    if not State.jumpInputActive then return end
     local hum = getHum()
     if not hum or hum.Health <= 0 then return end
     if hum:GetState() == Enum.HumanoidStateType.Dead then return end
@@ -97,78 +102,93 @@ local function doJump()
 end
 
 local function startJumpHold()
+    if not State.MultiJumpEnabled then return end
     if jumpHolding then return end
     jumpHolding = true
+    State.jumpInputActive = true
     if jumpHoldThread then task.cancel(jumpHoldThread); jumpHoldThread = nil end
     jumpHoldThread = task.spawn(function()
-        while jumpHolding do
+        while jumpHolding and State.jumpInputActive do
             doJump()
             task.wait(State.JumpHoldInterval)
         end
+        jumpHolding = false
     end)
 end
 
 local function stopJumpHold()
-    jumpHolding = false
+    State.jumpInputActive = false
+    if jumpHolding then
+        jumpHolding = false
+    end
     if jumpHoldThread then
         task.cancel(jumpHoldThread)
         jumpHoldThread = nil
     end
 end
 
+-- PC: Space / gamepad A
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if not State.MultiJumpEnabled then return end
     if input.KeyCode == Enum.KeyCode.Space
         or input.KeyCode == Enum.KeyCode.ButtonA then
         startJumpHold()
-    elseif input.UserInputType == Enum.UserInputType.Touch then
-        local pos = input.Position
-        local vp = Camera.ViewportSize
-        if pos.X > vp.X * 0.65 and pos.Y > vp.Y * 0.55 then
-            startJumpHold()
-        end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Space
-        or input.KeyCode == Enum.KeyCode.ButtonA
-        or input.UserInputType == Enum.UserInputType.Touch then
+        or input.KeyCode == Enum.KeyCode.ButtonA then
         stopJumpHold()
     end
 end)
 
--- fallback frame check (HP virtual jump)
-RunService.Heartbeat:Connect(function()
-    if not State.MultiJumpEnabled then
-        stopJumpHold()
-        return
-    end
-    local spaceDown = UserInputService:IsKeyDown(Enum.KeyCode.Space)
-    local jumpBtnDown = false
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        local touchGui = playerGui:FindFirstChild("TouchGui")
-        if touchGui then
-            local frame = touchGui:FindFirstChild("TouchControlFrame")
-            if frame then
-                local jumpBtn = frame:FindFirstChild("JumpButton")
-                if jumpBtn and jumpBtn:IsA("ImageButton") then
-                    jumpBtnDown = jumpBtn.ImageTransparency < 0.5
-                end
-            end
+-- HP: hook tombol jump virtual Roblox langsung (bukan heuristik transparansi)
+local function hookTouchJumpButton()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not playerGui then return end
+    local touchGui = playerGui:WaitForChild("TouchGui", 10)
+    if not touchGui then return end
+    local frame = touchGui:WaitForChild("TouchControlFrame", 10)
+    if not frame then return end
+    local jumpBtn = frame:WaitForChild("JumpButton", 10)
+    if not jumpBtn then return end
+
+    jumpBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            if State.MultiJumpEnabled then startJumpHold() end
         end
-    end
-    if spaceDown or jumpBtnDown then
-        startJumpHold()
-    else
+    end)
+    jumpBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            stopJumpHold()
+        end
+    end)
+    jumpBtn.MouseButton1Down:Connect(function()
+        if State.MultiJumpEnabled then startJumpHold() end
+    end)
+    jumpBtn.MouseButton1Up:Connect(function()
         stopJumpHold()
-    end
+    end)
+end
+
+task.spawn(hookTouchJumpButton)
+
+-- kalau respawn, TouchGui hilang — re-hook
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(2)
+    task.spawn(hookTouchJumpButton)
 end)
+
+-- safety: kalau toggle dimatikan, stop semua
+local function setMultiJump(v)
+    State.MultiJumpEnabled = v
+    if not v then stopJumpHold() end
+end
 
 -- ============================================================
--- 2. FLY (HP + PC, speed sendiri)
+-- 2. FLY
 -- ============================================================
 local function stopFly()
     if State.flyConn then State.flyConn:Disconnect(); State.flyConn = nil end
@@ -243,75 +263,8 @@ local function applySpeed()
 end
 
 -- ============================================================
--- 4. ESP (default off semua)
+-- 4. ESP — FIX: recreate bersih tiap sub-toggle, urutan nggak ngaruh
 -- ============================================================
-local function createESP(p)
-    if p == LocalPlayer or State.espObjects[p] then return end
-    local obj = { highlight = nil, tracer = nil, boxLines = {}, nameTag = nil, head = nil }
-
-    local char = p.Character
-    if char then
-        if State.EspGlow then
-            local hl = Instance.new("Highlight")
-            hl.Name = "OllieESP"
-            hl.FillColor = State.EspColor
-            hl.OutlineColor = State.EspColor
-            hl.FillTransparency = 0.5
-            hl.OutlineTransparency = 0
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Adornee = char
-            hl.Parent = char
-            obj.highlight = hl
-        end
-
-        if State.EspName then
-            local head = char:FindFirstChild("Head")
-            if head then
-                local bb = Instance.new("BillboardGui")
-                bb.Name = "OllieESPName"
-                bb.Adornee = head
-                bb.Size = UDim2.new(0, 200, 0, 40)
-                bb.StudsOffset = Vector3.new(0, 2.5, 0)
-                bb.AlwaysOnTop = true
-                bb.Parent = head
-
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.new(1, 0, 1, 0)
-                label.BackgroundTransparency = 1
-                label.Text = p.Name
-                label.TextColor3 = State.EspColor
-                label.TextStrokeTransparency = 0
-                label.TextStrokeColor3 = Color3.new(0, 0, 0)
-                label.TextScaled = true
-                label.Font = Enum.Font.GothamBold
-                label.Parent = bb
-                obj.nameTag = label
-                obj.head = head
-            end
-        end
-    end
-
-    if State.EspLine then
-        local line = Drawing.new("Line")
-        line.Color = State.EspColor
-        line.Thickness = 1.5
-        line.Visible = false
-        obj.tracer = line
-    end
-
-    if State.EspBox then
-        for i = 1, 4 do
-            local l = Drawing.new("Line")
-            l.Color = State.EspColor
-            l.Thickness = 1
-            l.Visible = false
-            table.insert(obj.boxLines, l)
-        end
-    end
-
-    State.espObjects[p] = obj
-end
-
 local function removeESP(p)
     local obj = State.espObjects[p]
     if not obj then return end
@@ -327,6 +280,90 @@ local function clearAllESP()
     State.espObjects = {}
 end
 
+local function createESP(p)
+    if p == LocalPlayer then return end
+    if State.espObjects[p] then removeESP(p) end
+    if not State.EspEnabled then return end
+
+    local obj = { highlight = nil, tracer = nil, boxLines = {}, nameTag = nil }
+
+    local char = p.Character
+
+    -- GLOW: selalu ada kalau EspGlow aktif ATAU EspEnabled aktif (fallback)
+    if State.EspGlow and char then
+        local hl = Instance.new("Highlight")
+        hl.Name = "OllieESP"
+        hl.FillColor = State.EspColor
+        hl.OutlineColor = State.EspColor
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = char
+        hl.Parent = char
+        obj.highlight = hl
+    end
+
+    -- NAMA
+    if State.EspName and char then
+        local head = char:FindFirstChild("Head")
+        if head then
+            local bb = Instance.new("BillboardGui")
+            bb.Name = "OllieESPName"
+            bb.Adornee = head
+            bb.Size = UDim2.new(0, 200, 0, 40)
+            bb.StudsOffset = Vector3.new(0, 2.5, 0)
+            bb.AlwaysOnTop = true
+            bb.Parent = head
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Text = p.Name
+            label.TextColor3 = State.EspColor
+            label.TextStrokeTransparency = 0
+            label.TextStrokeColor3 = Color3.new(0, 0, 0)
+            label.TextScaled = true
+            label.Font = Enum.Font.GothamBold
+            label.Parent = bb
+            obj.nameTag = label
+        end
+    end
+
+    -- LINE
+    if State.EspLine then
+        local ok, line = pcall(function() return Drawing.new("Line") end)
+        if ok and line then
+            line.Color = State.EspColor
+            line.Thickness = 1.5
+            line.Visible = false
+            obj.tracer = line
+        end
+    end
+
+    -- BOX
+    if State.EspBox then
+        for i = 1, 4 do
+            local ok, l = pcall(function() return Drawing.new("Line") end)
+            if ok and l then
+                l.Color = State.EspColor
+                l.Thickness = 1
+                l.Visible = false
+                table.insert(obj.boxLines, l)
+            end
+        end
+    end
+
+    State.espObjects[p] = obj
+end
+
+local function rebuildAllESP()
+    clearAllESP()
+    if not State.EspEnabled then return end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then createESP(p) end
+    end
+end
+
 local function updateESP()
     if not State.EspEnabled then return end
     for p, obj in pairs(State.espObjects) do
@@ -336,6 +373,7 @@ local function updateESP()
             if obj.tracer then obj.tracer.Visible = false end
             for _, l in ipairs(obj.boxLines) do l.Visible = false end
             if obj.nameTag then obj.nameTag.TextTransparency = 1 end
+            if obj.highlight then obj.highlight.Enabled = false end
             continue
         end
 
@@ -410,7 +448,7 @@ Players.PlayerRemoving:Connect(removeESP)
 RunService.RenderStepped:Connect(updateESP)
 
 -- ============================================================
--- 5. WALLHACK — NOCLIP TEMBUS SEMUA BLOCK + VISUAL
+-- 5. WALLHACK — NOCLIP + VISUAL
 -- ============================================================
 local function setNoclipParts(char)
     if not char then return end
@@ -512,7 +550,7 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 -- ============================================================
--- 6. TP KE PLAYER
+-- 6. TP
 -- ============================================================
 local function getPlayerNames()
     local names = {}
@@ -534,7 +572,7 @@ local function teleportToPlayer(name)
 end
 
 -- ============================================================
--- FLY UI (tombol naik/turun HP)
+-- FLY UI
 -- ============================================================
 local flyGui = Instance.new("ScreenGui")
 flyGui.Name = "OllieFlyUI"
@@ -579,14 +617,14 @@ _G.OllieFlyUI = {
 -- UI RAYFIELD
 -- ============================================================
 local Window = Rayfield:CreateWindow({
-    Name = "ollie — mod menu v3.1",
+    Name = "ollie — mod menu v3.2",
     LoadingTitle = "ollie: oli panas, sabar ya sayang...",
     LoadingSubtitle = "absolute ollie, built by olivia",
     ConfigurationSaving = { Enabled = false },
     Keybind = Enum.KeyCode.RightShift,
 })
 
--- MOVEMENT TAB
+-- MOVEMENT
 local MoveTab = Window:CreateTab("Movement", 4483362458)
 
 MoveTab:CreateSection("Multi Jump (Unlimited — Tahan)")
@@ -594,10 +632,7 @@ MoveTab:CreateToggle({
     Name = "Enable Multi Jump",
     CurrentValue = false,
     Flag = "MultiJump",
-    Callback = function(v)
-        State.MultiJumpEnabled = v
-        if not v then stopJumpHold() end
-    end,
+    Callback = function(v) setMultiJump(v) end,
 })
 MoveTab:CreateSlider({
     Name = "Jump Velocity",
@@ -619,10 +654,10 @@ MoveTab:CreateSlider({
 })
 MoveTab:CreateParagraph({
     Title = "Info",
-    Content = "Tahan tombol jump = spam terus. Lepas = berhenti.",
+    Content = "Tahan tombol jump = spam. Lepas = stop. Tidak akan nyala sendiri.",
 })
 
-MoveTab:CreateSection("Fly (HP + PC)")
+MoveTab:CreateSection("Fly")
 MoveTab:CreateToggle({
     Name = "Enable Fly",
     CurrentValue = false,
@@ -637,10 +672,6 @@ MoveTab:CreateSlider({
     CurrentValue = 100,
     Flag = "FlySpeed",
     Callback = function(v) State.FlySpeed = v end,
-})
-MoveTab:CreateParagraph({
-    Title = "Kontrol Fly",
-    Content = "HP: joystick gerak, tombol ↑/↓ naik/turun. PC: WASD + E/Q.",
 })
 
 MoveTab:CreateSection("Speed")
@@ -660,7 +691,7 @@ MoveTab:CreateSlider({
     Callback = function(v) State.WalkSpeed = v; applySpeed() end,
 })
 
--- VISUAL TAB
+-- VISUAL
 local VisualTab = Window:CreateTab("Visual", 4483362458)
 
 VisualTab:CreateSection("ESP (Default OFF)")
@@ -671,9 +702,11 @@ VisualTab:CreateToggle({
     Callback = function(v)
         State.EspEnabled = v
         if v then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then createESP(p) end
+            -- kalau semua sub masih off, nyalakan glow otomatis biar keliatan
+            if not (State.EspGlow or State.EspLine or State.EspBox or State.EspName) then
+                State.EspGlow = true
             end
+            rebuildAllESP()
         else
             clearAllESP()
         end
@@ -685,9 +718,7 @@ VisualTab:CreateToggle({
     Flag = "ESPGlow",
     Callback = function(v)
         State.EspGlow = v
-        for _, obj in pairs(State.espObjects) do
-            if obj.highlight then obj.highlight.Enabled = v and State.EspEnabled end
-        end
+        if State.EspEnabled then rebuildAllESP() end
     end,
 })
 VisualTab:CreateToggle({
@@ -696,9 +727,7 @@ VisualTab:CreateToggle({
     Flag = "ESPLine",
     Callback = function(v)
         State.EspLine = v
-        for _, obj in pairs(State.espObjects) do
-            if obj.tracer then obj.tracer.Visible = false end
-        end
+        if State.EspEnabled then rebuildAllESP() end
     end,
 })
 VisualTab:CreateToggle({
@@ -707,9 +736,7 @@ VisualTab:CreateToggle({
     Flag = "ESPBox",
     Callback = function(v)
         State.EspBox = v
-        for _, obj in pairs(State.espObjects) do
-            for _, l in ipairs(obj.boxLines) do l.Visible = false end
-        end
+        if State.EspEnabled then rebuildAllESP() end
     end,
 })
 VisualTab:CreateToggle({
@@ -718,9 +745,7 @@ VisualTab:CreateToggle({
     Flag = "ESPName",
     Callback = function(v)
         State.EspName = v
-        for _, obj in pairs(State.espObjects) do
-            if obj.nameTag then obj.nameTag.TextTransparency = v and 0 or 1 end
-        end
+        if State.EspEnabled then rebuildAllESP() end
     end,
 })
 VisualTab:CreateColorPicker({
@@ -769,7 +794,7 @@ VisualTab:CreateColorPicker({
     end,
 })
 
--- TELEPORT TAB
+-- TELEPORT
 local TpTab = Window:CreateTab("Teleport", 4483362458)
 local playerDropdown
 local function refreshList()
@@ -814,4 +839,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     if State.WallhackEnabled then startNoclip() end
 end)
 
-notify("ollie", "v3.1 nyala — esp off default, jump tahan, noclip tembus, fly HP")
+notify("ollie", "v3.2 nyala — jump fix, esp fix, noclip tembus, fly HP")
