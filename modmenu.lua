@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Dropdown TP Fixed)
-  Fitur: Dropdown TP List, God Mode, Walk Speed, Super Noclip, Fly, Multiple Jump, ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Resizable & Draggable Icon)
+  Fitur: Draggable Icon, Resizable UI, Dropdown TP, God Mode, Speed, Noclip, Fly
 ]]
 
 local Players = game:GetService("Players")
@@ -28,6 +28,7 @@ ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.Name = "ModMenu_GUI"
 ScreenGui.ResetOnSpawn = false
 
+-- Tombol Buka Menu (Ikon Bulat)
 local OpenIcon = Instance.new("TextButton")
 OpenIcon.Parent = ScreenGui
 OpenIcon.BackgroundColor3 = Colors.TitleBar
@@ -42,6 +43,7 @@ Instance.new("UICorner", OpenIcon).CornerRadius = UDim.new(1, 0)
 Instance.new("UIStroke", OpenIcon).Color = Colors.Accent
 Instance.new("UIStroke", OpenIcon).Thickness = 2
 
+-- Frame Utama Menu
 local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Colors.Background
@@ -51,6 +53,7 @@ MainFrame.Active = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(60, 60, 70)
 
+-- Title Bar (Area Geser Menu)
 local TitleBar = Instance.new("Frame")
 TitleBar.Parent = MainFrame
 TitleBar.BackgroundColor3 = Colors.TitleBar
@@ -86,17 +89,63 @@ CloseBtn.TextColor3 = Colors.Text
 CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
 
+-- Tombol Resize (Ubah Ukuran Menu)
+local ResizeGrip = Instance.new("TextButton")
+ResizeGrip.Parent = MainFrame
+ResizeGrip.BackgroundTransparency = 1
+ResizeGrip.Size = UDim2.new(0, 30, 0, 30)
+ResizeGrip.Position = UDim2.new(1, -30, 1, -30)
+ResizeGrip.Font = Enum.Font.GothamBold
+ResizeGrip.Text = "◢"
+ResizeGrip.TextColor3 = Colors.Accent
+ResizeGrip.TextSize = 24
+ResizeGrip.ZIndex = 2
+
+-- Logika Buka/Tutup Menu
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     OpenIcon.Visible = true
 end)
 
-OpenIcon.MouseButton1Click:Connect(function()
-    MainFrame.Visible = true
-    OpenIcon.Visible = false
+-- Logika Geser Ikon Bulat (OpenIcon)
+local iconDragging = false
+local iconDragStart, iconStartPos
+local iconMoved = false
+
+OpenIcon.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        iconDragging = true
+        iconMoved = false
+        iconDragStart = input.Position
+        iconStartPos = OpenIcon.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then 
+                iconDragging = false 
+                -- Jika tidak digeser jauh, anggap sebagai klik (buka menu)
+                if not iconMoved then
+                    MainFrame.Visible = true
+                    OpenIcon.Visible = false
+                end
+            end
+        end)
+    end
 end)
 
--- Logika Dragging
+OpenIcon.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if iconDragging then
+            local delta = input.Position - iconDragStart
+            if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
+                iconMoved = true -- Tandai bahwa ikon sedang digeser, bukan diklik
+            end
+            if iconMoved then
+                OpenIcon.Position = UDim2.new(iconStartPos.X.Scale, iconStartPos.X.Offset + delta.X, iconStartPos.Y.Scale, iconStartPos.Y.Offset + delta.Y)
+            end
+        end
+    end
+end)
+
+-- Logika Geser Menu Utama (TitleBar)
 local dragging, dragInput, dragStart, startPos
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -118,6 +167,31 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
+-- Logika Ubah Ukuran Menu (ResizeGrip)
+local resizing = false
+local resizeStart, resizeStartSize
+ResizeGrip.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        resizeStart = input.Position
+        resizeStartSize = MainFrame.AbsoluteSize
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then resizing = false end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - resizeStart
+        -- Batas minimal 250x300, maksimal 500x600
+        local newWidth = math.clamp(resizeStartSize.X + delta.X, 250, 500)
+        local newHeight = math.clamp(resizeStartSize.Y + delta.Y, 300, 600)
+        MainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
+    end
+end)
+
+-- Area Scroll
 local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Parent = MainFrame
 ScrollingFrame.BackgroundTransparency = 1
@@ -143,7 +217,7 @@ local function CreateSection(text)
     local SectionFrame = Instance.new("Frame")
     SectionFrame.Parent = ScrollingFrame
     SectionFrame.BackgroundTransparency = 1
-    SectionFrame.Size = UDim2.new(0, 240, 0, 20)
+    SectionFrame.Size = UDim2.new(0, 220, 0, 20)
     local SectionText = Instance.new("TextLabel")
     SectionText.Parent = SectionFrame
     SectionText.BackgroundTransparency = 1
@@ -159,7 +233,7 @@ local function CreateToggle(name, callback)
     local Button = Instance.new("TextButton")
     Button.Parent = ScrollingFrame
     Button.BackgroundColor3 = Colors.ButtonOff
-    Button.Size = UDim2.new(0, 240, 0, 35)
+    Button.Size = UDim2.new(0, 220, 0, 35)
     Button.Font = Enum.Font.GothamSemibold
     Button.Text = name .. " [OFF]"
     Button.TextColor3 = Colors.Text
@@ -183,7 +257,7 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     local SliderContainer = Instance.new("Frame")
     SliderContainer.Parent = ScrollingFrame
     SliderContainer.BackgroundColor3 = Colors.Section
-    SliderContainer.Size = UDim2.new(0, 240, 0, 50)
+    SliderContainer.Size = UDim2.new(0, 220, 0, 50)
     Instance.new("UICorner", SliderContainer).CornerRadius = UDim.new(0, 6)
     local SliderLabel = Instance.new("TextLabel")
     SliderLabel.Parent = SliderContainer
@@ -199,7 +273,7 @@ local function CreateSlider(name, minVal, maxVal, defaultVal, callback)
     SliderBar.Parent = SliderContainer
     SliderBar.BackgroundColor3 = Colors.SliderBg
     SliderBar.Position = UDim2.new(0, 10, 0, 30)
-    SliderBar.Size = UDim2.new(0, 220, 0, 10)
+    SliderBar.Size = UDim2.new(0, 200, 0, 10)
     SliderBar.Text = ""
     Instance.new("UICorner", SliderBar).CornerRadius = UDim.new(1, 0)
     local FillBar = Instance.new("Frame")
@@ -240,18 +314,17 @@ CreateSection("👤 Teleport Pemain")
 local TPDropdownBtn = Instance.new("TextButton")
 TPDropdownBtn.Parent = ScrollingFrame
 TPDropdownBtn.BackgroundColor3 = Colors.Section
-TPDropdownBtn.Size = UDim2.new(0, 240, 0, 35)
+TPDropdownBtn.Size = UDim2.new(0, 220, 0, 35)
 TPDropdownBtn.Font = Enum.Font.GothamSemibold
 TPDropdownBtn.Text = "Buka List Pemain [▼]"
 TPDropdownBtn.TextColor3 = Colors.Text
 TPDropdownBtn.TextSize = 13
 Instance.new("UICorner", TPDropdownBtn).CornerRadius = UDim.new(0, 6)
 
--- Frame Penampung List Pemain (Awalnya tertutup)
 local PlayerListContainer = Instance.new("Frame")
 PlayerListContainer.Parent = ScrollingFrame
 PlayerListContainer.BackgroundColor3 = Colors.Section
-PlayerListContainer.Size = UDim2.new(0, 240, 0, 0) -- Ukuran 0 (Tertutup)
+PlayerListContainer.Size = UDim2.new(0, 220, 0, 0)
 PlayerListContainer.ClipsDescendants = true
 Instance.new("UICorner", PlayerListContainer).CornerRadius = UDim.new(0, 6)
 
@@ -273,17 +346,15 @@ ListPadding.Parent = ListScroll
 ListPadding.PaddingTop = UDim.new(0, 5)
 ListPadding.PaddingBottom = UDim.new(0, 5)
 
--- Logika Buka/Tutup Dropdown
 local isDropdownOpen = false
-local TweenService = game:GetService("TweenService")
 TPDropdownBtn.MouseButton1Click:Connect(function()
     isDropdownOpen = not isDropdownOpen
     if isDropdownOpen then
         TPDropdownBtn.Text = "Tutup List Pemain [▲]"
-        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 240, 0, 150)}):Play()
+        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 220, 0, 150)}):Play()
     else
         TPDropdownBtn.Text = "Buka List Pemain [▼]"
-        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 240, 0, 0)}):Play()
+        TweenService:Create(PlayerListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 220, 0, 0)}):Play()
     end
 end)
 
@@ -335,7 +406,7 @@ CreateSlider("Walk Speed", 16, 200, 16, function(val)
 end)
 
 local noclipSpeed = 2
-CreateSlider("Noclip Push Speed", 1, 10, 2, function(val)
+CreateSlider("Noclip Push Speed", 1, 5, 2, function(val)
     noclipSpeed = val
 end)
 
@@ -343,8 +414,11 @@ local wallHackActive = false
 local noclipConnection
 CreateToggle("Super Noclip (All Blocks)", function(state)
     wallHackActive = state
+    local char = LocalPlayer.Character
+    if not char then return end
+
     if wallHackActive then
-        noclipConnection = RunService.Stepped:Connect(function()
+        noclipConnection = RunService.Heartbeat:Connect(function(deltaTime)
             if not wallHackActive then return end
             local myChar = LocalPlayer.Character
             if myChar then
@@ -359,7 +433,8 @@ CreateToggle("Super Noclip (All Blocks)", function(state)
                     end
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
-                        hrp.CFrame = hrp.CFrame + (moveDir * noclipSpeed)
+                        local speed = currentWalkSpeed * deltaTime
+                        hrp.CFrame = hrp.CFrame + (moveDir * speed)
                         humanoid:ChangeState(Enum.HumanoidStateType.Running)
                     end
                 end
@@ -367,6 +442,15 @@ CreateToggle("Super Noclip (All Blocks)", function(state)
         end)
     else
         if noclipConnection then noclipConnection:Disconnect() end
+        local myChar = LocalPlayer.Character
+        if myChar then
+            for _, part in pairs(myChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                    part.CanQuery = true
+                end
+            end
+        end
     end
 end)
 
