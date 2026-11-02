@@ -1,16 +1,14 @@
 --[[
     ByVoid — No system is safe
-    ESP BRUTAL: fallback scan, 2D box, 3D box, line, nama, distance, health bar, glow
-    fitur lama UTUH: multi jump tahan, fly HP, speed, noclip, wallhack glow, tp
+    update: + FLING (lempar player) + SPINBOT (badan muter)
+    semua fitur lama UTUH:
+      jump tahan, fly HP, speed, ESP brutal, noclip, wallhack glow, tp
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
 --]]
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-if not Rayfield then
-    warn("[ByVoid] Rayfield gagal load — cek koneksi / executor")
-    return
-end
+if not Rayfield then warn("[ByVoid] Rayfield gagal load"); return end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -33,6 +31,9 @@ local State = {
     NoclipEnabled = false, WallhackGlowEnabled = false,
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {}, savedCollide = {}, noclipConn = nil,
+    -- fun
+    SpinBotEnabled = false, SpinBotSpeed = 20, spinConn = nil,
+    FlingPower = 500,
     SelectedPlayer = nil,
 }
 
@@ -60,12 +61,9 @@ local function getPlayerRoot(p)
     end
     if State.EspFallbackScan then
         for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("Humanoid") and d.Parent then
-                local model = d.Parent
-                if model.Name == p.Name then
-                    local hrp = model:FindFirstChild("HumanoidRootPart")
-                    if hrp then return hrp, model end
-                end
+            if d:IsA("Humanoid") and d.Parent and d.Parent.Name == p.Name then
+                local hrp = d.Parent:FindFirstChild("HumanoidRootPart")
+                if hrp then return hrp, d.Parent end
             end
         end
     end
@@ -219,7 +217,6 @@ local function removeESP(p)
     end
     State.espObjects[p] = nil
 end
-
 local function clearAllESP()
     for p, _ in pairs(State.espObjects) do removeESP(p) end
     State.espObjects = {}
@@ -247,25 +244,20 @@ local function createESP(p)
             bb.Name = "OllieESPName"; bb.Adornee = head
             bb.Size = UDim2.new(0, 220, 0, 60); bb.StudsOffset = Vector3.new(0, 2.5, 0)
             bb.AlwaysOnTop = true; bb.Parent = head
-
             local nl = Instance.new("TextLabel")
             nl.Size = UDim2.new(1, 0, 0.5, 0); nl.Position = UDim2.new(0, 0, 0, 0)
             nl.BackgroundTransparency = 1; nl.Text = p.Name
             nl.TextColor3 = State.EspColor; nl.TextStrokeTransparency = 0
             nl.TextStrokeColor3 = Color3.new(0, 0, 0); nl.TextScaled = true
-            nl.Font = Enum.Font.GothamBold; nl.Visible = State.EspName
-            nl.Parent = bb
+            nl.Font = Enum.Font.GothamBold; nl.Visible = State.EspName; nl.Parent = bb
             obj.nameLabel = nl
-
             local dl = Instance.new("TextLabel")
             dl.Size = UDim2.new(1, 0, 0.5, 0); dl.Position = UDim2.new(0, 0, 0.5, 0)
             dl.BackgroundTransparency = 1; dl.Text = ""
             dl.TextColor3 = State.EspColor; dl.TextStrokeTransparency = 0
             dl.TextStrokeColor3 = Color3.new(0, 0, 0); dl.TextScaled = true
-            dl.Font = Enum.Font.Gotham; dl.Visible = State.EspDistance
-            dl.Parent = bb
-            obj.distLabel = dl
-            obj.billboard = bb
+            dl.Font = Enum.Font.Gotham; dl.Visible = State.EspDistance; dl.Parent = bb
+            obj.distLabel = dl; obj.billboard = bb
         end
     end
 
@@ -293,24 +285,18 @@ local function createESP(p)
             obj.tracer = line
         end
     end
-
     if State.EspBox then
         for i = 1, 4 do
             local ok, l = pcall(function() return Drawing.new("Line") end)
-            if ok and l then
-                l.Color = State.EspColor; l.Thickness = 1; l.Visible = false
-                table.insert(obj.boxLines, l)
-            end
+            if ok and l then l.Color = State.EspColor; l.Thickness = 1; l.Visible = false
+                table.insert(obj.boxLines, l) end
         end
     end
-
     if State.EspBox3D then
         for i = 1, 12 do
             local ok, l = pcall(function() return Drawing.new("Line") end)
-            if ok and l then
-                l.Color = State.EspColor; l.Thickness = 1; l.Visible = false
-                table.insert(obj.box3DLines, l)
-            end
+            if ok and l then l.Color = State.EspColor; l.Thickness = 1; l.Visible = false
+                table.insert(obj.box3DLines, l) end
         end
     end
 
@@ -345,12 +331,9 @@ local function drawBox3D(obj, hrp)
         local a, b = corners[e[1]], corners[e[2]]
         local l = obj.box3DLines[i]
         if a and b and a.on and b.on then
-            l.From = Vector2.new(a.sp.X, a.sp.Y)
-            l.To = Vector2.new(b.sp.X, b.sp.Y)
+            l.From = Vector2.new(a.sp.X, a.sp.Y); l.To = Vector2.new(b.sp.X, b.sp.Y)
             l.Color = State.EspColor; l.Visible = true
-        else
-            l.Visible = false
-        end
+        else l.Visible = false end
     end
 end
 
@@ -381,7 +364,6 @@ local function updateESP()
                 obj.healthBg.Parent.Adornee = head
             end
         end
-
         if not hrp then
             if obj.tracer then obj.tracer.Visible = false end
             for _, l in ipairs(obj.boxLines) do l.Visible = false end
@@ -392,28 +374,22 @@ local function updateESP()
             if obj.healthFg then obj.healthFg.Visible = false end
             continue
         end
-
         local dist = (hrp.Position - myPos).Magnitude
         local inRange = dist <= State.EspMaxDist
 
         if obj.highlight then
-            obj.highlight.FillColor = State.EspColor
-            obj.highlight.OutlineColor = State.EspColor
+            obj.highlight.FillColor = State.EspColor; obj.highlight.OutlineColor = State.EspColor
             obj.highlight.Enabled = State.EspGlow and inRange
         end
-
         if obj.nameLabel then
             obj.nameLabel.Visible = State.EspName and inRange
-            obj.nameLabel.TextColor3 = State.EspColor
-            obj.nameLabel.Text = p.Name
+            obj.nameLabel.TextColor3 = State.EspColor; obj.nameLabel.Text = p.Name
         end
-
         if obj.distLabel then
             obj.distLabel.Visible = State.EspDistance and inRange
             obj.distLabel.TextColor3 = State.EspColor
             obj.distLabel.Text = string.format("[%d]", math.floor(dist))
         end
-
         if obj.healthFg then
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if hum then
@@ -423,19 +399,14 @@ local function updateESP()
                 obj.healthFg.Visible = State.EspHealth and inRange
             end
         end
-
         if obj.tracer then
             local sp, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             if onScreen and State.EspLine and inRange then
                 obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 obj.tracer.To = Vector2.new(sp.X, sp.Y)
-                obj.tracer.Color = State.EspColor
-                obj.tracer.Visible = true
-            else
-                obj.tracer.Visible = false
-            end
+                obj.tracer.Color = State.EspColor; obj.tracer.Visible = true
+            else obj.tracer.Visible = false end
         end
-
         if #obj.boxLines == 4 then
             if State.EspBox and inRange then
                 local topPos = hrp.Position + Vector3.new(0, 3, 0)
@@ -443,34 +414,21 @@ local function updateESP()
                 local ts, ton = Camera:WorldToViewportPoint(topPos)
                 local bs, bon = Camera:WorldToViewportPoint(botPos)
                 if ton and bon then
-                    local h = math.abs(bs.Y - ts.Y)
-                    local w = h * 0.6
+                    local h = math.abs(bs.Y - ts.Y); local w = h * 0.6
                     local cx = (ts.X + bs.X) / 2
-                    local tl = Vector2.new(cx - w/2, ts.Y)
-                    local tr = Vector2.new(cx + w/2, ts.Y)
-                    local bl = Vector2.new(cx - w/2, bs.Y)
-                    local br = Vector2.new(cx + w/2, bs.Y)
+                    local tl = Vector2.new(cx - w/2, ts.Y); local tr = Vector2.new(cx + w/2, ts.Y)
+                    local bl = Vector2.new(cx - w/2, bs.Y); local br = Vector2.new(cx + w/2, bs.Y)
                     obj.boxLines[1].From = tl; obj.boxLines[1].To = tr
                     obj.boxLines[2].From = tr; obj.boxLines[2].To = br
                     obj.boxLines[3].From = br; obj.boxLines[3].To = bl
                     obj.boxLines[4].From = bl; obj.boxLines[4].To = tl
-                    for _, l in ipairs(obj.boxLines) do
-                        l.Color = State.EspColor; l.Visible = true
-                    end
-                else
-                    for _, l in ipairs(obj.boxLines) do l.Visible = false end
-                end
-            else
-                for _, l in ipairs(obj.boxLines) do l.Visible = false end
-            end
+                    for _, l in ipairs(obj.boxLines) do l.Color = State.EspColor; l.Visible = true end
+                else for _, l in ipairs(obj.boxLines) do l.Visible = false end end
+            else for _, l in ipairs(obj.boxLines) do l.Visible = false end end
         end
-
         if #obj.box3DLines == 12 then
-            if State.EspBox3D and inRange then
-                drawBox3D(obj, hrp)
-            else
-                for _, l in ipairs(obj.box3DLines) do l.Visible = false end
-            end
+            if State.EspBox3D and inRange then drawBox3D(obj, hrp)
+            else for _, l in ipairs(obj.box3DLines) do l.Visible = false end end
         end
     end
 end
@@ -484,7 +442,6 @@ local function setupPlayerESP(p)
         if State.EspEnabled then createESP(p) end
     end)
 end
-
 for _, p in ipairs(Players:GetPlayers()) do setupPlayerESP(p) end
 Players.PlayerAdded:Connect(setupPlayerESP)
 Players.PlayerRemoving:Connect(removeESP)
@@ -502,7 +459,6 @@ local function setNoclipParts(char)
         end
     end
 end
-
 local function startNoclip()
     local char = getChar()
     if char then setNoclipParts(char) end
@@ -519,7 +475,6 @@ local function startNoclip()
         end
     end)
 end
-
 local function stopNoclip()
     if State.noclipConn then State.noclipConn:Disconnect(); State.noclipConn = nil end
     for part, orig in pairs(State.savedCollide) do
@@ -545,7 +500,6 @@ local function createWallhackGlow(p)
     hl.Adornee = char; hl.Parent = char
     State.wallhackObjects[p] = hl
 end
-
 local function removeWallhackGlow(p)
     local char = p.Character
     if char then
@@ -554,18 +508,15 @@ local function removeWallhackGlow(p)
     end
     State.wallhackObjects[p] = nil
 end
-
 local function applyAllWallhackGlow()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then createWallhackGlow(p) end
     end
 end
-
 local function clearAllWallhackGlow()
     for _, p in ipairs(Players:GetPlayers()) do removeWallhackGlow(p) end
     State.wallhackObjects = {}
 end
-
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(0.5)
@@ -582,6 +533,73 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 -- ============================================================
+-- 5C. FLING — lempar player
+-- ============================================================
+-- client-side: set velocity kencang di root target
+-- efek: kalau game nggak re-validate posisi, target keliatan kelempar
+local function flingPlayer(targetPlayer)
+    local hrp, char = getPlayerRoot(targetPlayer)
+    if not hrp then return false end
+    local dir = (hrp.Position - Camera.CFrame.Position)
+    if dir.Magnitude < 0.1 then dir = Vector3.new(0, 1, 0) end
+    dir = dir.Unit
+    hrp.AssemblyLinearVelocity = dir * State.FlingPower + Vector3.new(0, State.FlingPower * 0.5, 0)
+    return true
+end
+
+local function flingNearest()
+    local myHRP = getHRP()
+    if not myHRP then return end
+    local nearest, nearestDist = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local hrp = getPlayerRoot(p)
+            if hrp then
+                local d = (hrp.Position - myHRP.Position).Magnitude
+                if d < nearestDist then nearestDist = d; nearest = p end
+            end
+        end
+    end
+    if nearest then
+        local ok = flingPlayer(nearest)
+        notify("ByVoid", ok and ("fling " .. nearest.Name) or "target nggak ketemu")
+    else notify("ByVoid", "nggak ada player di sekitar") end
+end
+
+local function flingAll()
+    local count = 0
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if flingPlayer(p) then count = count + 1 end
+        end
+    end
+    notify("ByVoid", string.format("fling %d player", count))
+end
+
+-- ============================================================
+-- 5D. SPINBOT — badan muter
+-- ============================================================
+local function startSpinBot()
+    if State.spinConn then State.spinConn:Disconnect() end
+    State.SpinBotEnabled = true
+    local angle = 0
+    State.spinConn = RunService.RenderStepped:Connect(function(dt)
+        if not State.SpinBotEnabled then return end
+        local hrp = getHRP()
+        if not hrp then return end
+        angle = angle + math.rad(State.SpinBotSpeed) * (dt * 60)
+        if angle > math.pi * 2 then angle = angle - math.pi * 2 end
+        local pos = hrp.Position
+        hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, angle, 0)
+    end)
+end
+
+local function stopSpinBot()
+    State.SpinBotEnabled = false
+    if State.spinConn then State.spinConn:Disconnect(); State.spinConn = nil end
+end
+
+-- ============================================================
 -- 6. TP
 -- ============================================================
 local function getPlayerNames()
@@ -591,7 +609,6 @@ local function getPlayerNames()
     end
     return names
 end
-
 local function teleportToPlayer(name)
     local target = Players:FindFirstChild(name)
     if not target then return end
@@ -605,27 +622,22 @@ end
 -- FLY UI
 -- ============================================================
 local flyGui = Instance.new("ScreenGui")
-flyGui.Name = "OllieFlyUI"
-flyGui.ResetOnSpawn = false
+flyGui.Name = "OllieFlyUI"; flyGui.ResetOnSpawn = false
 flyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local upBtn = Instance.new("TextButton")
-upBtn.Size = UDim2.new(0, 60, 0, 60)
-upBtn.Position = UDim2.new(0, 20, 1, -160)
+upBtn.Size = UDim2.new(0, 60, 0, 60); upBtn.Position = UDim2.new(0, 20, 1, -160)
 upBtn.Text = "↑"; upBtn.TextSize = 32
 upBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 upBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-upBtn.BackgroundTransparency = 0.3; upBtn.Visible = false
-upBtn.Parent = flyGui
+upBtn.BackgroundTransparency = 0.3; upBtn.Visible = false; upBtn.Parent = flyGui
 
 local downBtn = Instance.new("TextButton")
-downBtn.Size = UDim2.new(0, 60, 0, 60)
-downBtn.Position = UDim2.new(0, 20, 1, -90)
+downBtn.Size = UDim2.new(0, 60, 0, 60); downBtn.Position = UDim2.new(0, 20, 1, -90)
 downBtn.Text = "↓"; downBtn.TextSize = 32
 downBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 downBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-downBtn.BackgroundTransparency = 0.3; downBtn.Visible = false
-downBtn.Parent = flyGui
+downBtn.BackgroundTransparency = 0.3; downBtn.Visible = false; downBtn.Parent = flyGui
 
 upBtn.MouseButton1Down:Connect(function() State.flyUp = true end)
 upBtn.MouseButton1Up:Connect(function() State.flyUp = false end)
@@ -633,14 +645,13 @@ upBtn.MouseLeave:Connect(function() State.flyUp = false end)
 downBtn.MouseButton1Down:Connect(function() State.flyDown = true end)
 downBtn.MouseButton1Up:Connect(function() State.flyDown = false end)
 downBtn.MouseLeave:Connect(function() State.flyDown = false end)
-
 _G.OllieFlyUI = {
     show = function() upBtn.Visible = true; downBtn.Visible = true end,
     hide = function() upBtn.Visible = false; downBtn.Visible = false end,
 }
 
 -- ============================================================
--- UI RAYFIELD — ByVoid
+-- UI RAYFIELD
 -- ============================================================
 local Window = Rayfield:CreateWindow({
     Name = "ByVoid",
@@ -653,139 +664,104 @@ local Window = Rayfield:CreateWindow({
 -- MOVEMENT
 local MoveTab = Window:CreateTab("Movement", 4483362458)
 MoveTab:CreateSection("Multi Jump (Unlimited — Tahan)")
-MoveTab:CreateToggle({
-    Name = "Enable Multi Jump", CurrentValue = false, Flag = "MultiJump",
-    Callback = function(v) setMultiJump(v) end,
-})
-MoveTab:CreateSlider({
-    Name = "Jump Velocity", Range = {30, 200}, Increment = 5, Suffix = "vel",
-    CurrentValue = 50, Flag = "JumpVel",
-    Callback = function(v) State.jumpVelocity = v end,
-})
-MoveTab:CreateSlider({
-    Name = "Jump Spam Interval", Range = {0.03, 0.5}, Increment = 0.01, Suffix = "s",
-    CurrentValue = 0.08, Flag = "JumpInterval",
-    Callback = function(v) State.JumpHoldInterval = v end,
-})
-
+MoveTab:CreateToggle({ Name = "Enable Multi Jump", CurrentValue = false, Flag = "MultiJump",
+    Callback = function(v) setMultiJump(v) end })
+MoveTab:CreateSlider({ Name = "Jump Velocity", Range = {30, 200}, Increment = 5, Suffix = "vel",
+    CurrentValue = 50, Flag = "JumpVel", Callback = function(v) State.jumpVelocity = v end })
+MoveTab:CreateSlider({ Name = "Jump Spam Interval", Range = {0.03, 0.5}, Increment = 0.01, Suffix = "s",
+    CurrentValue = 0.08, Flag = "JumpInterval", Callback = function(v) State.JumpHoldInterval = v end })
 MoveTab:CreateSection("Fly")
-MoveTab:CreateToggle({
-    Name = "Enable Fly", CurrentValue = false, Flag = "Fly",
-    Callback = function(v) toggleFly(v) end,
-})
-MoveTab:CreateSlider({
-    Name = "Fly Speed", Range = {10, 500}, Increment = 10, Suffix = "studs/s",
-    CurrentValue = 100, Flag = "FlySpeed",
-    Callback = function(v) State.FlySpeed = v end,
-})
-
+MoveTab:CreateToggle({ Name = "Enable Fly", CurrentValue = false, Flag = "Fly",
+    Callback = function(v) toggleFly(v) end })
+MoveTab:CreateSlider({ Name = "Fly Speed", Range = {10, 500}, Increment = 10, Suffix = "studs/s",
+    CurrentValue = 100, Flag = "FlySpeed", Callback = function(v) State.FlySpeed = v end })
 MoveTab:CreateSection("Speed")
-MoveTab:CreateToggle({
-    Name = "Enable Speed", CurrentValue = false, Flag = "Speed",
-    Callback = function(v) State.SpeedEnabled = v; applySpeed() end,
-})
-MoveTab:CreateSlider({
-    Name = "Walk Speed", Range = {16, 300}, Increment = 1, Suffix = "studs/s",
+MoveTab:CreateToggle({ Name = "Enable Speed", CurrentValue = false, Flag = "Speed",
+    Callback = function(v) State.SpeedEnabled = v; applySpeed() end })
+MoveTab:CreateSlider({ Name = "Walk Speed", Range = {16, 300}, Increment = 1, Suffix = "studs/s",
     CurrentValue = 50, Flag = "WalkSpeed",
-    Callback = function(v) State.WalkSpeed = v; applySpeed() end,
-})
+    Callback = function(v) State.WalkSpeed = v; applySpeed() end })
+
+-- FUN
+local FunTab = Window:CreateTab("Fun", 4483362458)
+FunTab:CreateSection("Spinbot")
+FunTab:CreateToggle({ Name = "Enable Spinbot", CurrentValue = false, Flag = "Spin",
+    Callback = function(v) if v then startSpinBot() else stopSpinBot() end end })
+FunTab:CreateSlider({ Name = "Spin Speed", Range = {1, 100}, Increment = 1, Suffix = "deg",
+    CurrentValue = 20, Flag = "SpinSpeed",
+    Callback = function(v) State.SpinBotSpeed = v end })
+
+FunTab:CreateSection("Fling")
+FunTab:CreateSlider({ Name = "Fling Power", Range = {100, 5000}, Increment = 100, Suffix = "power",
+    CurrentValue = 500, Flag = "FlingPower",
+    Callback = function(v) State.FlingPower = v end })
+FunTab:CreateButton({ Name = "Fling Player Terpilih", Callback = function()
+    if not State.SelectedPlayer then notify("ByVoid", "pilih player dulu di tab Teleport"); return end
+    local target = Players:FindFirstChild(State.SelectedPlayer)
+    if not target then notify("ByVoid", "player nggak ketemu"); return end
+    local ok = flingPlayer(target)
+    notify("ByVoid", ok and ("fling " .. target.Name) or "gagal fling")
+end })
+FunTab:CreateButton({ Name = "Fling Player Terdekat", Callback = flingNearest })
+FunTab:CreateButton({ Name = "Fling Semua Player", Callback = flingAll })
 
 -- VISUAL
 local VisualTab = Window:CreateTab("Visual", 4483362458)
-
 VisualTab:CreateSection("ESP (Default OFF)")
-VisualTab:CreateToggle({
-    Name = "Enable ESP", CurrentValue = false, Flag = "ESP",
+VisualTab:CreateToggle({ Name = "Enable ESP", CurrentValue = false, Flag = "ESP",
     Callback = function(v)
         State.EspEnabled = v
         if v then
             if not (State.EspGlow or State.EspLine or State.EspBox or State.EspName or State.EspBox3D or State.EspHealth or State.EspDistance) then
-                notify("ByVoid", "pilih minimal 1: Glow / Line / Box / Nama / 3D / HP / Dist")
+                notify("ByVoid", "pilih minimal 1 sub-ESP")
             end
             rebuildAllESP()
-        else
-            clearAllESP()
-        end
-    end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Glow", CurrentValue = false, Flag = "ESPGlow",
-    Callback = function(v) State.EspGlow = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Line (dari atas)", CurrentValue = false, Flag = "ESPLine",
-    Callback = function(v) State.EspLine = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Box 2D", CurrentValue = false, Flag = "ESPBox",
-    Callback = function(v) State.EspBox = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Box 3D", CurrentValue = false, Flag = "ESPBox3D",
-    Callback = function(v) State.EspBox3D = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Nama", CurrentValue = false, Flag = "ESPName",
-    Callback = function(v) State.EspName = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Distance", CurrentValue = false, Flag = "ESPDistance",
-    Callback = function(v) State.EspDistance = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Health Bar", CurrentValue = false, Flag = "ESPHealth",
-    Callback = function(v) State.EspHealth = v; if State.EspEnabled then rebuildAllESP() end end,
-})
-VisualTab:CreateToggle({
-    Name = "ESP Fallback Scan (nangkep player unparent)", CurrentValue = true, Flag = "ESPScan",
-    Callback = function(v) State.EspFallbackScan = v end,
-})
-VisualTab:CreateSlider({
-    Name = "ESP Max Distance", Range = {50, 5000}, Increment = 50, Suffix = "studs",
-    CurrentValue = 1000, Flag = "ESPDist",
-    Callback = function(v) State.EspMaxDist = v end,
-})
-VisualTab:CreateColorPicker({
-    Name = "ESP Color", Color = Color3.fromRGB(0, 255, 100), Flag = "ESPColor",
+        else clearAllESP() end
+    end })
+VisualTab:CreateToggle({ Name = "ESP Glow", CurrentValue = false, Flag = "ESPGlow",
+    Callback = function(v) State.EspGlow = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Line (dari atas)", CurrentValue = false, Flag = "ESPLine",
+    Callback = function(v) State.EspLine = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Box 2D", CurrentValue = false, Flag = "ESPBox",
+    Callback = function(v) State.EspBox = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Box 3D", CurrentValue = false, Flag = "ESPBox3D",
+    Callback = function(v) State.EspBox3D = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Nama", CurrentValue = false, Flag = "ESPName",
+    Callback = function(v) State.EspName = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Distance", CurrentValue = false, Flag = "ESPDistance",
+    Callback = function(v) State.EspDistance = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Health Bar", CurrentValue = false, Flag = "ESPHealth",
+    Callback = function(v) State.EspHealth = v; if State.EspEnabled then rebuildAllESP() end end })
+VisualTab:CreateToggle({ Name = "ESP Fallback Scan", CurrentValue = true, Flag = "ESPScan",
+    Callback = function(v) State.EspFallbackScan = v end })
+VisualTab:CreateSlider({ Name = "ESP Max Distance", Range = {50, 5000}, Increment = 50, Suffix = "studs",
+    CurrentValue = 1000, Flag = "ESPDist", Callback = function(v) State.EspMaxDist = v end })
+VisualTab:CreateColorPicker({ Name = "ESP Color", Color = Color3.fromRGB(0, 255, 100), Flag = "ESPColor",
     Callback = function(color)
         State.EspColor = color
         for _, obj in pairs(State.espObjects) do
-            if obj.highlight then
-                obj.highlight.FillColor = color; obj.highlight.OutlineColor = color
-            end
+            if obj.highlight then obj.highlight.FillColor = color; obj.highlight.OutlineColor = color end
             if obj.tracer then obj.tracer.Color = color end
             for _, l in ipairs(obj.boxLines) do l.Color = color end
             for _, l in ipairs(obj.box3DLines) do l.Color = color end
             if obj.nameLabel then obj.nameLabel.TextColor3 = color end
             if obj.distLabel then obj.distLabel.TextColor3 = color end
         end
-    end,
-})
+    end })
 
 VisualTab:CreateSection("Wallhack (Dipisah)")
-VisualTab:CreateToggle({
-    Name = "Wallhack Noclip (Tembus Semua)", CurrentValue = false, Flag = "Noclip",
-    Callback = function(v)
-        State.NoclipEnabled = v
-        if v then startNoclip() else stopNoclip() end
-    end,
-})
-VisualTab:CreateToggle({
-    Name = "Wallhack Glow (Visual)", CurrentValue = false, Flag = "WHGlow",
-    Callback = function(v)
-        State.WallhackGlowEnabled = v
-        if v then applyAllWallhackGlow() else clearAllWallhackGlow() end
-    end,
-})
-VisualTab:CreateColorPicker({
-    Name = "Wallhack Glow Color", Color = Color3.fromRGB(255, 60, 60), Flag = "WHColor",
+VisualTab:CreateToggle({ Name = "Wallhack Noclip (Tembus Semua)", CurrentValue = false, Flag = "Noclip",
+    Callback = function(v) State.NoclipEnabled = v; if v then startNoclip() else stopNoclip() end end })
+VisualTab:CreateToggle({ Name = "Wallhack Glow (Visual)", CurrentValue = false, Flag = "WHGlow",
+    Callback = function(v) State.WallhackGlowEnabled = v
+        if v then applyAllWallhackGlow() else clearAllWallhackGlow() end end })
+VisualTab:CreateColorPicker({ Name = "Wallhack Glow Color", Color = Color3.fromRGB(255, 60, 60), Flag = "WHColor",
     Callback = function(color)
         State.WallhackColor = color
         for _, hl in pairs(State.wallhackObjects) do
             if hl and hl.Parent then hl.FillColor = color end
         end
-    end,
-})
+    end })
 
 -- TELEPORT
 local TpTab = Window:CreateTab("Teleport", 4483362458)
@@ -794,23 +770,15 @@ local function refreshList()
     if playerDropdown then playerDropdown:Refresh(getPlayerNames()) end
 end
 playerDropdown = TpTab:CreateDropdown({
-    Name = "Pilih Player", Options = getPlayerNames(),
-    CurrentOption = {}, MultipleOptions = false, Flag = "PlayerSelect",
-    Callback = function(opt)
-        if opt and opt[1] then State.SelectedPlayer = opt[1] end
-    end,
+    Name = "Pilih Player", Options = getPlayerNames(), CurrentOption = {},
+    MultipleOptions = false, Flag = "PlayerSelect",
+    Callback = function(opt) if opt and opt[1] then State.SelectedPlayer = opt[1] end end,
 })
 TpTab:CreateButton({ Name = "Refresh List", Callback = refreshList })
-TpTab:CreateButton({
-    Name = "Teleport ke Player",
-    Callback = function()
-        if not State.SelectedPlayer then
-            notify("ByVoid", "pilih player dulu, sayang")
-            return
-        end
-        teleportToPlayer(State.SelectedPlayer)
-    end,
-})
+TpTab:CreateButton({ Name = "Teleport ke Player", Callback = function()
+    if not State.SelectedPlayer then notify("ByVoid", "pilih player dulu"); return end
+    teleportToPlayer(State.SelectedPlayer)
+end })
 Players.PlayerAdded:Connect(function() task.wait(0.5); refreshList() end)
 Players.PlayerRemoving:Connect(function() task.wait(0.5); refreshList() end)
 
@@ -821,9 +789,10 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     stopFly()
     stopJumpHold()
+    stopSpinBot()
     applySpeed()
     State.savedCollide = {}
     if State.NoclipEnabled then startNoclip() end
 end)
 
-notify("ByVoid", "No system is safe — brutal ESP loaded")
+notify("ByVoid", "No system is safe — fling + spinbot loaded")
