@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Anti-Touch Noclip & Clean ESP)
-  Fitur: Draggable UI, TP, Speed, Super Noclip, Fly, Dual ESP (Fixed)
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Fixed Jump & ESP)
+  Fitur: Draggable UI, TP, Speed, Noclip (Gravity Lock), Fly, Dual ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -415,14 +415,19 @@ CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
                         if part:IsA("BasePart") then
                             part.CanCollide = false
                             part.CanQuery = false
-                            part.CanTouch = false -- Mencegah anti-cheat Brookhaven mendeteksi sentuhan
+                            part.CanTouch = false
                         end
                     end
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
                         local speed = currentWalkSpeed * deltaTime
                         hrp.CFrame = hrp.CFrame + (moveDir * speed)
-                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
+                    
+                    -- Gravity Lock (Mencegah TP keluar di Brookhaven saat tidak melompat)
+                    -- Jika karakter tidak melompat, tarik sedikit ke bawah agar dianggap menapak tanah
+                    if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+                        hrp.Velocity = Vector3.new(hrp.Velocity.X, -15, hrp.Velocity.Z)
                     end
                 end
             end
@@ -442,15 +447,7 @@ CreateToggle("Super Noclip (Brookhaven Bypass)", function(state)
     end
 end)
 
--- Cegah Jump saat Noclip aktif (supaya server Brookhaven tidak curiga)
-UserInputService.JumpRequest:Connect(function()
-    if wallHackActive then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            char.Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
-        end
-    end
-end)
+-- Lompat sudah dikembalikan (tidak diblokir)
 
 local flySpeed = 50
 CreateSlider("Fly Speed", 10, 160, 50, function(val)
@@ -484,6 +481,29 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     else
         if flyConnection then flyConnection:Disconnect() end
         if bodyVelocity then bodyVelocity:Destroy() end
+    end
+end)
+
+local jumpActive = false
+local maxJumps = 999
+local jumpCount = 0
+CreateToggle("Multiple Jump", function(state)
+    jumpActive = state
+    if not state then jumpCount = 0 end
+end)
+UserInputService.JumpRequest:Connect(function()
+    if jumpActive then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            local humanoid = char.Humanoid
+            if humanoid:GetState() == Enum.HumanoidStateType.Landed or humanoid:GetState() == Enum.HumanoidStateType.Running then
+                jumpCount = 0
+            end
+            if jumpCount < maxJumps then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                jumpCount = jumpCount + 1
+            end
+        end
     end
 end)
 
@@ -554,13 +574,14 @@ local espDrawings = {}
 CreateToggle("ESP Box (Line, Text, Health)", function(state)
     espBoxActive = state
     if not state then
-        -- Hapus semua gambar secara paksa dan sembunyikan sebelum dibuang
         for player, d in pairs(espDrawings) do
             if d then
                 for _, obj in pairs(d) do
                     if obj then 
-                        obj.Visible = false
-                        obj:Remove() 
+                        pcall(function()
+                            obj.Visible = false
+                            obj:Remove() 
+                        end)
                     end
                 end
             end
@@ -655,8 +676,10 @@ Players.PlayerRemoving:Connect(function(player)
     if espDrawings[player] then
         for _, obj in pairs(espDrawings[player]) do
             if obj then 
-                obj.Visible = false
-                obj:Remove() 
+                pcall(function()
+                    obj.Visible = false
+                    obj:Remove() 
+                end)
             end
         end
         espDrawings[player] = nil
