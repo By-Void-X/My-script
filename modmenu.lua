@@ -1,11 +1,10 @@
 --[[
     ByVoid — No system is safe
-    update:
-      - GOD MODE + tag "Map Support" (deteksi otomatis)
-      - FULLBRIGHT (Lighting override + auto re-apply)
+    update: + POV changer (FOV) + Low Graphics + Chams (Highlight body)
+    catatan: chams = client-side, cuma lo yang liat
     semua fitur lama UTUH:
       jump tahan, fly HP, speed, ESP brutal, noclip, wallhack glow,
-      spinbot, tp
+      spinbot, god mode + map support tag, fullbright, tp
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
 --]]
@@ -36,17 +35,20 @@ local State = {
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {}, savedCollide = {}, noclipConn = nil,
     SpinBotEnabled = false, SpinBotSpeed = 20, spinConn = nil,
-    -- god mode
     GodModeEnabled = false, godConn = nil, godHealthConn = nil,
     savedHealth = nil, savedMaxHealth = nil,
     godSupportStatus = "belum dites", godTestResult = nil, godTestDone = false,
-    -- fullbright
-    FullbrightEnabled = false, fbConn = nil,
-    fbSaved = nil,
+    FullbrightEnabled = false, fbConn = nil, fbSaved = nil,
+    -- POV
+    PovEnabled = false, PovValue = 70, defaultFOV = 70,
+    -- low graphics
+    LowGfxEnabled = false, lowGfxConn = nil, lowGfxSaved = nil,
+    -- chams
+    ChamsEnabled = false, ChamsColor = Color3.fromRGB(255, 0, 255),
+    ChamsObjects = {},
     SelectedPlayer = nil,
 }
 
--- referensi label god support (diisi setelah UI)
 local GodSupportLabel = nil
 
 -- ============================================================
@@ -84,9 +86,7 @@ end
 
 local function setGodSupportLabel(txt)
     State.godSupportStatus = txt
-    if GodSupportLabel then
-        GodSupportLabel:Set(txt)
-    end
+    if GodSupportLabel then GodSupportLabel:Set(txt) end
 end
 
 -- ============================================================
@@ -580,58 +580,38 @@ local function runGodModeTest()
     setGodSupportLabel("testing...")
     task.spawn(function()
         local hum = getHum()
-        if not hum then
-            setGodSupportLabel("no humanoid")
-            return
-        end
-
+        if not hum then setGodSupportLabel("no humanoid"); return end
         local origMax = hum.MaxHealth
         local origHealth = hum.Health
         local origStateEnabled = nil
-        pcall(function()
-            origStateEnabled = hum:GetStateEnabled(Enum.HumanoidStateType.Dead)
-        end)
+        pcall(function() origStateEnabled = hum:GetStateEnabled(Enum.HumanoidStateType.Dead) end)
 
-        -- test 1: MaxHealth bisa di-set?
         local maxSetOk = pcall(function() hum.MaxHealth = math.huge end)
         task.wait(0.2)
         local maxHeld = (hum.MaxHealth == math.huge)
 
-        -- test 2: Health bisa di-set?
         local healthSetOk = pcall(function() hum.Health = math.huge end)
         task.wait(0.2)
         local healthHeld = (hum.Health == math.huge)
 
-        -- test 3: SetStateEnabled Dead false berhasil?
-        local stateSetOk = pcall(function()
-            hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-        end)
+        local stateSetOk = pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
         task.wait(0.1)
         local stateHeld = false
-        pcall(function()
-            stateHeld = (hum:GetStateEnabled(Enum.HumanoidStateType.Dead) == false)
-        end)
+        pcall(function() stateHeld = (hum:GetStateEnabled(Enum.HumanoidStateType.Dead) == false) end)
 
-        -- test 4: coba damage kecil, cek health balik?
         local damageOk = false
-        if healthHeld then
-            damageOk = pcall(function() hum:TakeDamage(10) end)
-        end
+        if healthHeld then damageOk = pcall(function() hum:TakeDamage(10) end) end
         task.wait(0.3)
         local healedBack = healthHeld and (hum.Health >= hum.MaxHealth - 1)
 
-        -- restore dulu sebelum simpulin
         pcall(function()
             hum.MaxHealth = origMax
             hum.Health = origHealth
         end)
         if origStateEnabled ~= nil then
-            pcall(function()
-                hum:SetStateEnabled(Enum.HumanoidStateType.Dead, origStateEnabled)
-            end)
+            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, origStateEnabled) end)
         end
 
-        -- simpulin hasil
         local score = 0
         if maxSetOk and maxHeld then score = score + 1 end
         if healthSetOk and healthHeld then score = score + 1 end
@@ -639,17 +619,11 @@ local function runGodModeTest()
         if healedBack then score = score + 1 end
 
         local txt
-        if score >= 4 then
-            txt = "SUPPORT PENUH (4/4) — god mode jalan di map ini"
-        elseif score == 3 then
-            txt = "SUPPORT TINGGI (3/4) — god mode jalan, damage sesaat mungkin"
-        elseif score == 2 then
-            txt = "SUPPORT PARSIAL (2/4) — health bisa bolong kalau server reset"
-        elseif score == 1 then
-            txt = "SUPPORT RENDAH (1/4) — god mode lemah, game server-authoritative"
-        else
-            txt = "TIDAK SUPPORT (0/4) — game kunci health total"
-        end
+        if score >= 4 then txt = "SUPPORT PENUH (4/4) — god mode jalan di map ini"
+        elseif score == 3 then txt = "SUPPORT TINGGI (3/4) — god mode jalan, damage sesaat mungkin"
+        elseif score == 2 then txt = "SUPPORT PARSIAL (2/4) — health bisa bolong kalau server reset"
+        elseif score == 1 then txt = "SUPPORT RENDAH (1/4) — god mode lemah, server-authoritative"
+        else txt = "TIDAK SUPPORT (0/4) — game kunci health total" end
         setGodSupportLabel(txt)
         State.godTestDone = true
         State.godTestResult = score
@@ -670,7 +644,6 @@ local function startGodMode()
     State.GodModeEnabled = true
     local hum = getHum()
     applyGodMode(hum)
-
     if State.godConn then State.godConn:Disconnect() end
     State.godConn = RunService.Heartbeat:Connect(function()
         if not State.GodModeEnabled then return end
@@ -681,22 +654,16 @@ local function startGodMode()
             h.Health = math.huge
         end
     end)
-
-    -- HealthChanged listener per karakter
     local char = getChar()
     if char then
         local h = char:FindFirstChildOfClass("Humanoid")
         if h and not State.godHealthConn then
             State.godHealthConn = h.HealthChanged:Connect(function(newHealth)
                 if not State.GodModeEnabled then return end
-                if newHealth < h.MaxHealth then
-                    h.Health = h.MaxHealth
-                end
+                if newHealth < h.MaxHealth then h.Health = h.MaxHealth end
             end)
         end
     end
-
-    -- auto test setelah 1 detik aktif
     if not State.godTestDone then
         task.wait(1)
         if State.GodModeEnabled then runGodModeTest() end
@@ -740,8 +707,6 @@ local function saveLighting()
         FogStart = Lighting.FogStart,
         ClockTime = Lighting.ClockTime,
         ExposureCompensation = Lighting.ExposureCompensation,
-        EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
     }
 end
 
@@ -754,8 +719,6 @@ local function applyFullbright()
     Lighting.FogStart = 1e6
     Lighting.ClockTime = 12
     Lighting.ExposureCompensation = 0.5
-    Lighting.EnvironmentDiffuseScale = 1
-    Lighting.EnvironmentSpecularScale = 1
 end
 
 local function restoreLighting()
@@ -770,8 +733,8 @@ local function startFullbright()
     if not State.fbSaved then saveLighting() end
     State.FullbrightEnabled = true
     applyFullbright()
-    if State.fbConn then State.fbConn:Disconnect() end
-    -- loop re-apply tiap 2 detik biar nggak reset sama game
+    if State.fbConn then State.fbConn:Disconnect(); State.fbConn = nil end
+    -- pakai task.spawn bukan koneksi biar bisa cancel
     State.fbConn = task.spawn(function()
         while State.FullbrightEnabled do
             task.wait(2)
@@ -782,8 +745,158 @@ end
 
 local function stopFullbright()
     State.FullbrightEnabled = false
-    if State.fbConn then task.cancel(State.fbConn); State.fbConn = nil end
+    if State.fbConn then pcall(function() task.cancel(State.fbConn) end); State.fbConn = nil end
     restoreLighting()
+end
+
+-- ============================================================
+-- 5F. POV / FOV CHANGER
+-- ============================================================
+local function applyPov()
+    if not Camera then return end
+    if State.PovEnabled then
+        Camera.FieldOfView = State.PovValue
+    else
+        Camera.FieldOfView = State.defaultFOV
+    end
+end
+
+Camera:GetPropertyChangedSignal("FieldOfView"):Connect(function()
+    if State.PovEnabled and Camera.FieldOfView ~= State.PovValue then
+        Camera.FieldOfView = State.PovValue
+    end
+end)
+
+-- ============================================================
+-- 5G. LOW GRAPHICS
+-- ============================================================
+local function saveLowGfx()
+    State.lowGfxSaved = {
+        TerrainDecoration = Workspace.Terrain.Decoration,
+        TerrainWaterWaveSize = Workspace.Terrain.WaterWaveSize,
+        TerrainWaterWaveSpeed = Workspace.Terrain.WaterWaveSpeed,
+        TerrainWaterReflectance = Workspace.Terrain.WaterReflectance,
+        TerrainWaterTransparency = Workspace.Terrain.WaterTransparency,
+        GlobalShadows = Lighting.GlobalShadows,
+        LightingFogEnd = Lighting.FogEnd,
+        QualityLevel = nil, -- user setting, skip
+    }
+end
+
+local function applyLowGfx()
+    pcall(function()
+        Workspace.Terrain.Decoration = false
+        Workspace.Terrain.WaterWaveSize = 0
+        Workspace.Terrain.WaterWaveSpeed = 0
+        Workspace.Terrain.WaterReflectance = 0
+        Workspace.Terrain.WaterTransparency = 1
+    end)
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 1e6
+    -- matiin texture / decal di workspace
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("ParticleEmitter") or d:IsA("Smoke") or d:IsA("Fire") or d:IsA("Sparkles") then
+                d.Enabled = false
+            end
+        end
+    end)
+end
+
+local function restoreLowGfx()
+    if not State.lowGfxSaved then return end
+    pcall(function()
+        Workspace.Terrain.Decoration = State.lowGfxSaved.TerrainDecoration
+        Workspace.Terrain.WaterWaveSize = State.lowGfxSaved.TerrainWaterWaveSize
+        Workspace.Terrain.WaterWaveSpeed = State.lowGfxSaved.TerrainWaterWaveSpeed
+        Workspace.Terrain.WaterReflectance = State.lowGfxSaved.TerrainWaterReflectance
+        Workspace.Terrain.WaterTransparency = State.lowGfxSaved.TerrainWaterTransparency
+    end)
+    Lighting.GlobalShadows = State.lowGfxSaved.GlobalShadows
+    Lighting.FogEnd = State.lowGfxSaved.LightingFogEnd
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("ParticleEmitter") or d:IsA("Smoke") or d:IsA("Fire") or d:IsA("Sparkles") then
+                d.Enabled = true
+            end
+        end
+    end)
+    State.lowGfxSaved = nil
+end
+
+local function startLowGfx()
+    if not State.lowGfxSaved then saveLowGfx() end
+    State.LowGfxEnabled = true
+    applyLowGfx()
+    if State.lowGfxConn then State.lowGfxConn:Disconnect(); State.lowGfxConn = nil end
+    State.lowGfxConn = task.spawn(function()
+        while State.LowGfxEnabled do
+            task.wait(3)
+            if State.LowGfxEnabled then applyLowGfx() end
+        end
+    end)
+end
+
+local function stopLowGfx()
+    State.LowGfxEnabled = false
+    if State.lowGfxConn then pcall(function() task.cancel(State.lowGfxConn) end); State.lowGfxConn = nil end
+    restoreLowGfx()
+end
+
+-- ============================================================
+-- 5H. CHAMS — Highlight body player (client-side)
+-- ============================================================
+local function createChams(p)
+    if p == LocalPlayer then return end
+    local char = p.Character
+    if not char then return end
+    local old = char:FindFirstChild("OllieChams")
+    if old then old:Destroy() end
+    local hl = Instance.new("Highlight")
+    hl.Name = "OllieChams"
+    hl.FillColor = State.ChamsColor
+    hl.OutlineColor = State.ChamsColor
+    hl.FillTransparency = 0.2
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = char
+    hl.Parent = char
+    State.ChamsObjects[p] = hl
+end
+
+local function removeChams(p)
+    local char = p.Character
+    if char then
+        local hl = char:FindFirstChild("OllieChams")
+        if hl then hl:Destroy() end
+    end
+    State.ChamsObjects[p] = nil
+end
+
+local function applyAllChams()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then createChams(p) end
+    end
+end
+
+local function clearAllChams()
+    for _, p in ipairs(Players:GetPlayers()) do removeChams(p) end
+    State.ChamsObjects = {}
+end
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if State.ChamsEnabled then createChams(p) end
+    end)
+end)
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        p.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if State.ChamsEnabled then createChams(p) end
+        end)
+    end
 end
 
 -- ============================================================
@@ -876,25 +989,28 @@ FunTab:CreateToggle({ Name = "Enable God Mode", CurrentValue = false, Flag = "Go
     Callback = function(v) if v then startGodMode() else stopGodMode() end end })
 GodSupportLabel = FunTab:CreateLabel("Map Support: belum dites")
 FunTab:CreateButton({ Name = "Test Map Support Sekarang", Callback = function()
-    if not State.GodModeEnabled then
-        notify("ByVoid", "aktifkan God Mode dulu")
-        return
-    end
+    if not State.GodModeEnabled then notify("ByVoid", "aktifkan God Mode dulu"); return end
     State.godTestDone = false
     runGodModeTest()
 end })
 FunTab:CreateParagraph({ Title = "Info Map Support",
-    Content = "Tag muncul setelah god mode aktif 1 detik. Penuh = health & dead state client-trust. Tidak support = game kunci health dari server." })
-
+    Content = "Penuh = health & dead state client-trust. Tidak support = game kunci health server." })
 FunTab:CreateSection("Spinbot")
 FunTab:CreateToggle({ Name = "Enable Spinbot", CurrentValue = false, Flag = "Spin",
     Callback = function(v) if v then startSpinBot() else stopSpinBot() end end })
 FunTab:CreateSlider({ Name = "Spin Speed", Range = {1, 100}, Increment = 1, Suffix = "deg",
-    CurrentValue = 20, Flag = "SpinSpeed",
-    Callback = function(v) State.SpinBotSpeed = v end })
+    CurrentValue = 20, Flag = "SpinSpeed", Callback = function(v) State.SpinBotSpeed = v end })
 
 -- VISUAL
 local VisualTab = Window:CreateTab("Visual", 4483362458)
+
+VisualTab:CreateSection("POV / FOV")
+VisualTab:CreateToggle({ Name = "Enable POV Changer", CurrentValue = false, Flag = "Pov",
+    Callback = function(v) State.PovEnabled = v; applyPov() end })
+VisualTab:CreateSlider({ Name = "FOV Value", Range = {10, 120}, Increment = 1, Suffix = "°",
+    CurrentValue = 70, Flag = "PovVal",
+    Callback = function(v) State.PovValue = v; applyPov() end })
+
 VisualTab:CreateSection("ESP (Default OFF)")
 VisualTab:CreateToggle({ Name = "Enable ESP", CurrentValue = false, Flag = "ESP",
     Callback = function(v)
@@ -937,11 +1053,29 @@ VisualTab:CreateColorPicker({ Name = "ESP Color", Color = Color3.fromRGB(0, 255,
         end
     end })
 
-VisualTab:CreateSection("Fullbright")
+VisualTab:CreateSection("Chams (Client-side)")
+VisualTab:CreateToggle({ Name = "Enable Chams", CurrentValue = false, Flag = "Chams",
+    Callback = function(v) State.ChamsEnabled = v
+        if v then applyAllChams() else clearAllChams() end end })
+VisualTab:CreateColorPicker({ Name = "Chams Color", Color = Color3.fromRGB(255, 0, 255), Flag = "ChamsColor",
+    Callback = function(color)
+        State.ChamsColor = color
+        for _, hl in pairs(State.ChamsObjects) do
+            if hl and hl.Parent then
+                hl.FillColor = color; hl.OutlineColor = color
+            end
+        end
+    end })
+VisualTab:CreateParagraph({ Title = "Info Chams",
+    Content = "Chams cuma keliatan di layar lo (client-side). Player lain nggak liat warna ini." })
+
+VisualTab:CreateSection("Fullbright & Low Graphics")
 VisualTab:CreateToggle({ Name = "Enable Fullbright", CurrentValue = false, Flag = "Fullbright",
     Callback = function(v) if v then startFullbright() else stopFullbright() end end })
-VisualTab:CreateParagraph({ Title = "Info Fullbright",
-    Content = "Override Lighting: brightness max, ambient putih, no fog, no shadow. Auto re-apply tiap 2s biar nggak reset game." })
+VisualTab:CreateToggle({ Name = "Enable Low Graphics", CurrentValue = false, Flag = "LowGfx",
+    Callback = function(v) if v then startLowGfx() else stopLowGfx() end end })
+VisualTab:CreateParagraph({ Title = "Info Low Graphics",
+    Content = "Matiin terrain deco, water wave, shadow, particle. Auto re-apply tiap 3s." })
 
 VisualTab:CreateSection("Wallhack (Dipisah)")
 VisualTab:CreateToggle({ Name = "Wallhack Noclip (Tembus Semua)", CurrentValue = false, Flag = "Noclip",
@@ -989,4 +1123,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     if State.NoclipEnabled then startNoclip() end
 end)
 
-notify("ByVoid", "No system is safe — god mode tag + fullbright loaded")
+notify("ByVoid", "No system is safe — POV + low graphics + chams loaded")
