@@ -1,8 +1,14 @@
 --[[
-    roblox mod menu v2
-    fitur: multi jump UNLIMITED, fly (HP + speed), speed player,
-           esp (glow + line + box), wallhack tembus, tp ke player
-    executor: HP (Delta/Fluxus/Arceus) — harus support Drawing + Rayfield
+    ollie mod menu v3 — FULL
+    fitur:
+      1. multi jump UNLIMITED
+      2. fly (speed sendiri) — support HP + PC
+      3. speed player (custom)
+      4. ESP (glow + line atas + box + nama)
+      5. wallhack noclip (tembus SEMUA block) + visual highlight
+      6. tp ke player (dropdown list nama)
+    executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
+    absolute ollie, built by olivia
 --]]
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -12,7 +18,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
-
 local LocalPlayer = Players.LocalPlayer
 
 -- ============================================================
@@ -29,6 +34,8 @@ local State = {
     flyConn = nil,
     flyBV = nil,
     flyBG = nil,
+    flyUp = false,
+    flyDown = false,
 
     -- speed
     SpeedEnabled = false,
@@ -40,11 +47,16 @@ local State = {
     EspGlow = true,
     EspLine = true,
     EspBox = true,
+    EspName = true,
     EspColor = Color3.fromRGB(0, 255, 100),
     espObjects = {},
 
     -- wallhack
     WallhackEnabled = false,
+    WallhackColor = Color3.fromRGB(255, 60, 60),
+    wallhackObjects = {},
+    savedCollide = {},
+    noclipConn = nil,
 
     -- tp
     SelectedPlayer = nil,
@@ -67,7 +79,7 @@ local function notify(t, c)
 end
 
 -- ============================================================
--- MULTI JUMP UNLIMITED
+-- 1. MULTI JUMP UNLIMITED
 -- ============================================================
 local function doJump()
     if not State.MultiJumpEnabled then return end
@@ -87,12 +99,10 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- fallback: cek input tiap frame (buat HP yang JumpRequestnya nggak firing)
 local jumpDebounce = false
 RunService.Heartbeat:Connect(function()
     if not State.MultiJumpEnabled then return end
     if jumpDebounce then return end
-    -- Space di PC / tombol jump virtual HP
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
         jumpDebounce = true
         doJump()
@@ -102,7 +112,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
--- FLY (HP SUPPORT + SPEED)
+-- 2. FLY (HP + PC, speed sendiri)
 -- ============================================================
 local function stopFly()
     if State.flyConn then State.flyConn:Disconnect(); State.flyConn = nil end
@@ -111,6 +121,9 @@ local function stopFly()
     local hum = getHum()
     if hum then hum.PlatformStand = false end
     State.FlyEnabled = false
+    State.flyUp = false
+    State.flyDown = false
+    if _G.OllieFlyUI then _G.OllieFlyUI.hide() end
 end
 
 local function startFly()
@@ -120,6 +133,7 @@ local function startFly()
 
     stopFly()
     State.FlyEnabled = true
+    if _G.OllieFlyUI then _G.OllieFlyUI.show() end
 
     local bv = Instance.new("BodyVelocity")
     bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
@@ -144,20 +158,17 @@ local function startFly()
 
         bg.CFrame = Camera.CFrame
 
-        -- gerak horizontal via MoveDirection (WASD / joystick HP)
         local dir = hum2.MoveDirection
         local vel = Vector3.zero
         if dir.Magnitude > 0 then
             vel = dir.Unit * State.FlySpeed
         end
 
-        -- naik / turun: E/Q di PC, tombol virtual di HP pakai GUI
-        if UserInputService:IsKeyDown(Enum.KeyCode.E) then
-            vel = vel + Vector3.new(0, State.FlySpeed, 0)
-        elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
-            vel = vel - Vector3.new(0, State.FlySpeed, 0)
-        end
+        local vert = 0
+        if State.flyUp or UserInputService:IsKeyDown(Enum.KeyCode.E) then vert = 1 end
+        if State.flyDown or UserInputService:IsKeyDown(Enum.KeyCode.Q) then vert = -1 end
 
+        vel = vel + Vector3.new(0, vert * State.FlySpeed, 0)
         bv.Velocity = vel
     end)
 end
@@ -167,7 +178,7 @@ local function toggleFly(v)
 end
 
 -- ============================================================
--- SPEED
+-- 3. SPEED
 -- ============================================================
 local function applySpeed()
     local hum = getHum()
@@ -176,25 +187,57 @@ local function applySpeed()
 end
 
 -- ============================================================
--- ESP
+-- 4. ESP (glow + line + box + nama)
 -- ============================================================
-local function createESP(player)
-    if player == LocalPlayer or State.espObjects[player] then return end
-    local obj = { highlight = nil, tracer = nil, boxLines = {} }
+local function createESP(p)
+    if p == LocalPlayer or State.espObjects[p] then return end
+    local obj = { highlight = nil, tracer = nil, boxLines = {}, nameTag = nil, head = nil }
 
-    local char = player.Character
-    if char and State.EspGlow then
-        local hl = Instance.new("Highlight")
-        hl.Name = "OllieESP"
-        hl.FillColor = State.EspColor
-        hl.OutlineColor = State.EspColor
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.Parent = char
-        obj.highlight = hl
+    local char = p.Character
+    if char then
+        -- glow
+        if State.EspGlow then
+            local hl = Instance.new("Highlight")
+            hl.Name = "OllieESP"
+            hl.FillColor = State.EspColor
+            hl.OutlineColor = State.EspColor
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Adornee = char
+            hl.Parent = char
+            obj.highlight = hl
+        end
+
+        -- nama
+        if State.EspName then
+            local head = char:FindFirstChild("Head")
+            if head then
+                local bb = Instance.new("BillboardGui")
+                bb.Name = "OllieESPName"
+                bb.Adornee = head
+                bb.Size = UDim2.new(0, 200, 0, 40)
+                bb.StudsOffset = Vector3.new(0, 2.5, 0)
+                bb.AlwaysOnTop = true
+                bb.Parent = head
+
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.new(1, 0, 1, 0)
+                label.BackgroundTransparency = 1
+                label.Text = p.Name
+                label.TextColor3 = State.EspColor
+                label.TextStrokeTransparency = 0
+                label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                label.TextScaled = true
+                label.Font = Enum.Font.GothamBold
+                label.Parent = bb
+                obj.nameTag = label
+                obj.head = head
+            end
+        end
     end
 
+    -- line
     if State.EspLine then
         local line = Drawing.new("Line")
         line.Color = State.EspColor
@@ -203,6 +246,7 @@ local function createESP(player)
         obj.tracer = line
     end
 
+    -- box
     if State.EspBox then
         for i = 1, 4 do
             local l = Drawing.new("Line")
@@ -213,16 +257,19 @@ local function createESP(player)
         end
     end
 
-    State.espObjects[player] = obj
+    State.espObjects[p] = obj
 end
 
-local function removeESP(player)
-    local obj = State.espObjects[player]
+local function removeESP(p)
+    local obj = State.espObjects[p]
     if not obj then return end
     if obj.highlight then obj.highlight:Destroy() end
     if obj.tracer then obj.tracer:Remove() end
     for _, l in ipairs(obj.boxLines) do l:Remove() end
-    State.espObjects[player] = nil
+    if obj.nameTag and obj.nameTag.Parent then
+        obj.nameTag.Parent:Destroy()
+    end
+    State.espObjects[p] = nil
 end
 
 local function clearAllESP()
@@ -232,12 +279,13 @@ end
 
 local function updateESP()
     if not State.EspEnabled then return end
-    for player, obj in pairs(State.espObjects) do
-        local char = player.Character
+    for p, obj in pairs(State.espObjects) do
+        local char = p.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then
             if obj.tracer then obj.tracer.Visible = false end
             for _, l in ipairs(obj.boxLines) do l.Visible = false end
+            if obj.nameTag then obj.nameTag.TextTransparency = 1 end
             continue
         end
 
@@ -247,10 +295,15 @@ local function updateESP()
             obj.highlight.Enabled = State.EspGlow
         end
 
+        if obj.nameTag then
+            obj.nameTag.TextColor3 = State.EspColor
+            obj.nameTag.TextTransparency = State.EspName and 0 or 1
+        end
+
         if obj.tracer then
             local sp, onScreen = Camera:WorldToViewportPoint(hrp.Position)
             if onScreen and State.EspLine then
-                obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 obj.tracer.To = Vector2.new(sp.X, sp.Y)
                 obj.tracer.Color = State.EspColor
                 obj.tracer.Visible = true
@@ -291,13 +344,13 @@ local function updateESP()
     end
 end
 
-local function setupPlayerESP(player)
-    if player == LocalPlayer then return end
-    createESP(player)
-    player.CharacterAdded:Connect(function()
+local function setupPlayerESP(p)
+    if p == LocalPlayer then return end
+    createESP(p)
+    p.CharacterAdded:Connect(function()
         task.wait(0.5)
-        removeESP(player)
-        if State.EspEnabled then createESP(player) end
+        removeESP(p)
+        if State.EspEnabled then createESP(p) end
     end)
 end
 
@@ -307,91 +360,110 @@ Players.PlayerRemoving:Connect(removeESP)
 RunService.RenderStepped:Connect(updateESP)
 
 -- ============================================================
--- WALLHACK — TEMBUS SEMUA JENIS (SOLID, TERRAIN, MESH, DLL)
+-- 5. WALLHACK — NOCLIP TEMBUS SEMUA BLOCK + VISUAL
 -- ============================================================
--- Trik: pakai Highlight AlwaysOnTop untuk karakter player
--- + set local transparency untuk basepart player lain
--- + fallback ke ESP glow kalau executor blokir
-
-local wallhackParts = {} -- simpan {part = originalTransparency}
-
-local function applyWallhackOnChar(char)
+local function setNoclipParts(char)
     if not char then return end
-    -- highlight always on top
-    local existing = char:FindFirstChild("OllieWH")
-    if existing then existing:Destroy() end
-
-    if State.WallhackEnabled then
-        local hl = Instance.new("Highlight")
-        hl.Name = "OllieWH"
-        hl.FillColor = Color3.fromRGB(255, 0, 0)
-        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-        hl.FillTransparency = 0.85
-        hl.OutlineTransparency = 0
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.Parent = char
-
-        -- set transparansi lokal biar tembus
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                if not wallhackParts[part] then
-                    wallhackParts[part] = part.LocalTransparencyModifier
-                end
-                part.LocalTransparencyModifier = 0.6
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if State.savedCollide[part] == nil then
+                State.savedCollide[part] = part.CanCollide
             end
+            part.CanCollide = false
         end
     end
 end
 
-local function clearWallhackOnChar(char)
+local function startNoclip()
+    local char = getChar()
+    if char then setNoclipParts(char) end
+
+    if State.noclipConn then State.noclipConn:Disconnect() end
+    State.noclipConn = RunService.Stepped:Connect(function()
+        if not State.WallhackEnabled then return end
+        local c = getChar()
+        if not c then return end
+        for _, part in ipairs(c:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                if State.savedCollide[part] == nil then
+                    State.savedCollide[part] = true
+                end
+                part.CanCollide = false
+            end
+        end
+    end)
+end
+
+local function stopNoclip()
+    if State.noclipConn then State.noclipConn:Disconnect(); State.noclipConn = nil end
+    for part, orig in pairs(State.savedCollide) do
+        if part and part.Parent then
+            part.CanCollide = orig
+        end
+    end
+    State.savedCollide = {}
+end
+
+local function createWallhackVisual(p)
+    if p == LocalPlayer then return end
+    local char = p.Character
     if not char then return end
-    local hl = char:FindFirstChild("OllieWH")
-    if hl then hl:Destroy() end
+
+    local old = char:FindFirstChild("OllieWH")
+    if old then old:Destroy() end
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "OllieWH"
+    hl.FillColor = State.WallhackColor
+    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hl.FillTransparency = 0.55
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = char
+    hl.Parent = char
+    State.wallhackObjects[p] = hl
+end
+
+local function removeWallhackVisual(p)
+    local char = p.Character
+    if char then
+        local hl = char:FindFirstChild("OllieWH")
+        if hl then hl:Destroy() end
+    end
+    State.wallhackObjects[p] = nil
 end
 
 local function applyAllWallhack()
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            applyWallhackOnChar(p.Character)
-        end
+        if p ~= LocalPlayer then createWallhackVisual(p) end
     end
 end
 
 local function clearAllWallhack()
     for _, p in ipairs(Players:GetPlayers()) do
-        clearWallhackOnChar(p.Character)
+        removeWallhackVisual(p)
     end
-    -- restore transparency
-    for part, orig in pairs(wallhackParts) do
-        if part and part.Parent then
-            part.LocalTransparencyModifier = orig
-        end
-    end
-    wallhackParts = {}
+    State.wallhackObjects = {}
 end
 
--- re-apply kalau ada player baru / respawn
+-- re-apply visual
 Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function(c)
+    p.CharacterAdded:Connect(function()
         task.wait(0.5)
-        if State.WallhackEnabled then applyWallhackOnChar(c) end
+        if State.WallhackEnabled then createWallhackVisual(p) end
     end)
 end)
 for _, p in ipairs(Players:GetPlayers()) do
     if p ~= LocalPlayer then
-        p.CharacterAdded:Connect(function(c)
+        p.CharacterAdded:Connect(function()
             task.wait(0.5)
-            if State.WallhackEnabled then applyWallhackOnChar(c) end
+            if State.WallhackEnabled then createWallhackVisual(p) end
         end)
     end
 end
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    if State.WallhackEnabled then applyAllWallhack() end
-end)
 
 -- ============================================================
--- TP
+-- 6. TP KE PLAYER
 -- ============================================================
 local function getPlayerNames()
     local names = {}
@@ -413,17 +485,59 @@ local function teleportToPlayer(name)
 end
 
 -- ============================================================
--- UI
+-- FLY UI (tombol naik/turun HP)
+-- ============================================================
+local flyGui = Instance.new("ScreenGui")
+flyGui.Name = "OllieFlyUI"
+flyGui.ResetOnSpawn = false
+flyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local upBtn = Instance.new("TextButton")
+upBtn.Size = UDim2.new(0, 60, 0, 60)
+upBtn.Position = UDim2.new(0, 20, 1, -160)
+upBtn.Text = "↑"
+upBtn.TextSize = 32
+upBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+upBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
+upBtn.BackgroundTransparency = 0.3
+upBtn.Visible = false
+upBtn.Parent = flyGui
+
+local downBtn = Instance.new("TextButton")
+downBtn.Size = UDim2.new(0, 60, 0, 60)
+downBtn.Position = UDim2.new(0, 20, 1, -90)
+downBtn.Text = "↓"
+downBtn.TextSize = 32
+downBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+downBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
+downBtn.BackgroundTransparency = 0.3
+downBtn.Visible = false
+downBtn.Parent = flyGui
+
+upBtn.MouseButton1Down:Connect(function() State.flyUp = true end)
+upBtn.MouseButton1Up:Connect(function() State.flyUp = false end)
+upBtn.MouseLeave:Connect(function() State.flyUp = false end)
+downBtn.MouseButton1Down:Connect(function() State.flyDown = true end)
+downBtn.MouseButton1Up:Connect(function() State.flyDown = false end)
+downBtn.MouseLeave:Connect(function() State.flyDown = false end)
+
+_G.OllieFlyUI = {
+    show = function() upBtn.Visible = true; downBtn.Visible = true end,
+    hide = function() upBtn.Visible = false; downBtn.Visible = false end,
+}
+
+-- ============================================================
+-- UI RAYFIELD
 -- ============================================================
 local Window = Rayfield:CreateWindow({
-    Name = "ollie — mod menu v2",
+    Name = "ollie — mod menu v3",
     LoadingTitle = "ollie: oli panas, sabar ya sayang...",
     LoadingSubtitle = "absolute ollie, built by olivia",
     ConfigurationSaving = { Enabled = false },
     Keybind = Enum.KeyCode.RightShift,
 })
 
--- MOVEMENT
+-- MOVEMENT TAB
 local MoveTab = Window:CreateTab("Movement", 4483362458)
 
 MoveTab:CreateSection("Multi Jump (Unlimited)")
@@ -442,12 +556,8 @@ MoveTab:CreateSlider({
     Flag = "JumpVel",
     Callback = function(v) State.jumpVelocity = v end,
 })
-MoveTab:CreateParagraph({
-    Title = "Info",
-    Content = "Jump unlimited — tahan/spam tombol jump.",
-})
 
-MoveTab:CreateSection("Fly (HP Support)")
+MoveTab:CreateSection("Fly (HP + PC)")
 MoveTab:CreateToggle({
     Name = "Enable Fly",
     CurrentValue = false,
@@ -464,8 +574,8 @@ MoveTab:CreateSlider({
     Callback = function(v) State.FlySpeed = v end,
 })
 MoveTab:CreateParagraph({
-    Title = "Kontrol Fly HP",
-    Content = "Joystick = gerak, tombol ↑ / ↓ di layar buat naik/turun (muncul saat fly aktif).",
+    Title = "Kontrol Fly",
+    Content = "HP: joystick gerak, tombol ↑/↓ naik/turun. PC: WASD + E/Q.",
 })
 
 MoveTab:CreateSection("Speed")
@@ -485,7 +595,7 @@ MoveTab:CreateSlider({
     Callback = function(v) State.WalkSpeed = v; applySpeed() end,
 })
 
--- VISUAL
+-- VISUAL TAB
 local VisualTab = Window:CreateTab("Visual", 4483362458)
 
 VisualTab:CreateSection("ESP")
@@ -537,6 +647,17 @@ VisualTab:CreateToggle({
         end
     end,
 })
+VisualTab:CreateToggle({
+    Name = "ESP Nama",
+    CurrentValue = true,
+    Flag = "ESPName",
+    Callback = function(v)
+        State.EspName = v
+        for _, obj in pairs(State.espObjects) do
+            if obj.nameTag then obj.nameTag.TextTransparency = v and 0 or 1 end
+        end
+    end,
+})
 VisualTab:CreateColorPicker({
     Name = "ESP Color",
     Color = Color3.fromRGB(0, 255, 100),
@@ -550,22 +671,40 @@ VisualTab:CreateColorPicker({
             end
             if obj.tracer then obj.tracer.Color = color end
             for _, l in ipairs(obj.boxLines) do l.Color = color end
+            if obj.nameTag then obj.nameTag.TextColor3 = color end
         end
     end,
 })
 
-VisualTab:CreateSection("Wallhack (Tembus Semua)")
+VisualTab:CreateSection("Wallhack (Noclip Tembus Semua)")
 VisualTab:CreateToggle({
     Name = "Enable Wallhack",
     CurrentValue = false,
     Flag = "Wallhack",
     Callback = function(v)
         State.WallhackEnabled = v
-        if v then applyAllWallhack() else clearAllWallhack() end
+        if v then
+            startNoclip()
+            applyAllWallhack()
+        else
+            stopNoclip()
+            clearAllWallhack()
+        end
+    end,
+})
+VisualTab:CreateColorPicker({
+    Name = "Wallhack Color",
+    Color = Color3.fromRGB(255, 60, 60),
+    Flag = "WHColor",
+    Callback = function(color)
+        State.WallhackColor = color
+        for _, hl in pairs(State.wallhackObjects) do
+            if hl and hl.Parent then hl.FillColor = color end
+        end
     end,
 })
 
--- TELEPORT
+-- TELEPORT TAB
 local TpTab = Window:CreateTab("Teleport", 4483362458)
 local playerDropdown
 local function refreshList()
@@ -599,126 +738,14 @@ Players.PlayerAdded:Connect(function() task.wait(0.5); refreshList() end)
 Players.PlayerRemoving:Connect(function() task.wait(0.5); refreshList() end)
 
 -- ============================================================
--- FLY HP: TOMBOL NAIK/TURUN DI LAYAR
--- ============================================================
-local flyGui = Instance.new("ScreenGui")
-flyGui.Name = "OllieFlyUI"
-flyGui.ResetOnSpawn = false
-flyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local upBtn = Instance.new("TextButton")
-upBtn.Size = UDim2.new(0, 60, 0, 60)
-upBtn.Position = UDim2.new(0, 20, 1, -160)
-upBtn.Text = "↑"
-upBtn.TextSize = 32
-upBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-upBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-upBtn.BackgroundTransparency = 0.3
-upBtn.Visible = false
-upBtn.Parent = flyGui
-
-local downBtn = Instance.new("TextButton")
-downBtn.Size = UDim2.new(0, 60, 0, 60)
-downBtn.Position = UDim2.new(0, 20, 1, -90)
-downBtn.Text = "↓"
-downBtn.TextSize = 32
-downBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-downBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-downBtn.BackgroundTransparency = 0.3
-downBtn.Visible = false
-downBtn.Parent = flyGui
-
-local flyUp = false
-local flyDown = false
-
-upBtn.MouseButton1Down:Connect(function() flyUp = true end)
-upBtn.MouseButton1Up:Connect(function() flyUp = false end)
-upBtn.MouseLeave:Connect(function() flyUp = false end)
-
-downBtn.MouseButton1Down:Connect(function() flyDown = true end)
-downBtn.MouseButton1Up:Connect(function() flyDown = false end)
-downBtn.MouseLeave:Connect(function() flyDown = false end)
-
--- override fly vertical: pakai flyUp/flyDown, bukan E/Q
--- (patch ke fly conn dengan flag global)
-_G.OllieFlyVertical = function()
-    if flyUp then return 1 end
-    if flyDown then return -1 end
-    return 0
-end
-
--- tambahkan vertical control ke fly conn (rebuild conn dengan vert)
-local originalStartFly = startFly
-startFly = function()
-    local hrp = getHRP()
-    local hum = getHum()
-    if not hrp or not hum then return end
-
-    stopFly()
-    State.FlyEnabled = true
-    upBtn.Visible = true
-    downBtn.Visible = true
-
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = Vector3.zero
-    bv.Parent = hrp
-    State.flyBV = bv
-
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.P = 9000
-    bg.D = 500
-    bg.Parent = hrp
-    State.flyBG = bg
-
-    hum.PlatformStand = true
-
-    State.flyConn = RunService.RenderStepped:Connect(function()
-        if not State.FlyEnabled then return end
-        local hrp2 = getHRP()
-        local hum2 = getHum()
-        if not hrp2 or not hum2 or hum2.Health <= 0 then
-            upBtn.Visible = false
-            downBtn.Visible = false
-            stopFly()
-            return
-        end
-
-        bg.CFrame = Camera.CFrame
-
-        local dir = hum2.MoveDirection
-        local vel = Vector3.zero
-        if dir.Magnitude > 0 then
-            vel = dir.Unit * State.FlySpeed
-        end
-
-        -- vert dari tombol HP + E/Q PC
-        local vert = _G.OllieFlyVertical()
-        if UserInputService:IsKeyDown(Enum.KeyCode.E) then vert = 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Q) then vert = -1 end
-
-        vel = vel + Vector3.new(0, vert * State.FlySpeed, 0)
-        bv.Velocity = vel
-    end)
-end
-
--- stopFly patch: sembunyikan tombol
-local originalStopFly = stopFly
-stopFly = function()
-    if originalStopFly then originalStopFly() end
-    upBtn.Visible = false
-    downBtn.Visible = false
-end
-
--- ============================================================
--- RESPAWN CLEANUP (BUG FIX)
+-- RESPAWN CLEANUP
 -- ============================================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     stopFly()
     applySpeed()
-    if State.WallhackEnabled then applyAllWallhack() end
+    State.savedCollide = {}
+    if State.WallhackEnabled then startNoclip() end
 end)
 
-notify("ollie", "v2 nyala — wallhack tembus, jump unlimited, fly HP ready")
+notify("ollie", "v3 full nyala — noclip wallhack tembus semua, jump unlimited, fly HP, esp, tp")
