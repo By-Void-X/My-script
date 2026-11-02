@@ -1,770 +1,745 @@
+--[[
+    roblox mod menu
+    fitur: multi jump, fly (speed sendiri), speed player,
+           esp (glow + line + box), wallhack, tp ke player
+    executor: harus support Drawing API + loadstring
+    ui: Rayfield
+--]]
 
---==================================================
--- BYVOID MOD MENU V2
--- Roblox Studio | LocalScript
--- Mobile + PC
---==================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
 
-local Player = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local Config = {
-    MultiJump = false,
-    MaxJump = 3,
-    JumpCount = 0,
+-- ============================================================
+-- STATE
+-- ============================================================
+local State = {
+    -- jump
+    MultiJumpEnabled = false,
+    JumpPower = 50,
+    MaxJumps = 3,
+    jumpCount = 0,
+    canJump = false,
 
-    Fly = false,
-    FlySpeed = 50,
-    FlyUp = false,
-    FlyDown = false,
+    -- fly
+    FlyEnabled = false,
+    FlySpeed = 100,
+    flyConnection = nil,
+    flyBodyVelocity = nil,
+    flyBodyGyro = nil,
 
-    WalkSpeed = 16,
-    Noclip = false,
+    -- speed
+    SpeedEnabled = false,
+    WalkSpeed = 50,
+    defaultWalkSpeed = 16,
 
-    Glow = false,
-    ESPLine = false,
-    ESPBox = false,
-    ESPName = false
+    -- esp
+    EspEnabled = false,
+    EspGlow = true,
+    EspLine = true,
+    EspBox = true,
+    EspColor = Color3.fromRGB(0, 255, 100),
+    espObjects = {}, -- [player] = { highlights = {}, drawings = {} }
+
+    -- wallhack
+    WallhackEnabled = false,
+    wallhackHighlights = {},
+
+    -- tp
+    SelectedPlayer = nil,
 }
 
-local SelectedPlayer = nil
-local ESPData = {}
-local OriginalCollision = {}
-
-local GREEN = Color3.fromRGB(100, 230, 130)
-local PANEL = Color3.fromRGB(25, 29, 26)
-local BUTTON = Color3.fromRGB(43, 49, 44)
-local WHITE = Color3.fromRGB(245, 245, 245)
-
---==================================================
--- GUI
---==================================================
-
-local GUI = Instance.new("ScreenGui")
-GUI.Name = "ByVoidModMenu"
-GUI.ResetOnSpawn = false
-GUI.IgnoreGuiInset = true
-GUI.Parent = Player:WaitForChild("PlayerGui")
-
-local Main = Instance.new("Frame")
-Main.Name = "Main"
-Main.Size = UDim2.fromOffset(300, 440)
-Main.Position = UDim2.new(0.5, -150, 0.5, -220)
-Main.BackgroundColor3 = PANEL
-Main.BorderSizePixel = 0
-Main.Active = true
-Main.Parent = GUI
-
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 7)
-
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 45)
-Header.BackgroundColor3 = Color3.fromRGB(32, 39, 33)
-Header.BorderSizePixel = 0
-Header.Parent = Main
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -55, 1, 0)
-Title.Position = UDim2.fromOffset(12, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "BYVOID  /  MOD MENU"
-Title.TextColor3 = GREEN
-Title.TextSize = 16
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Header
-
-local Close = Instance.new("TextButton")
-Close.Size = UDim2.fromOffset(35, 35)
-Close.Position = UDim2.new(1, -40, 0, 5)
-Close.BackgroundColor3 = Color3.fromRGB(130, 50, 50)
-Close.Text = "X"
-Close.TextColor3 = WHITE
-Close.Font = Enum.Font.GothamBold
-Close.TextSize = 15
-Close.Parent = Header
-
-Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 5)
-
-local Open = Instance.new("TextButton")
-Open.Size = UDim2.fromOffset(115, 38)
-Open.Position = UDim2.new(0, 12, 0.5, -19)
-Open.BackgroundColor3 = PANEL
-Open.Text = "BYVOID  +"
-Open.TextColor3 = GREEN
-Open.Font = Enum.Font.GothamBold
-Open.TextSize = 13
-Open.Visible = false
-Open.Parent = GUI
-
-Instance.new("UICorner", Open).CornerRadius = UDim.new(0, 5)
-
-Close.MouseButton1Click:Connect(function()
-    Main.Visible = false
-    Open.Visible = true
-end)
-
-Open.MouseButton1Click:Connect(function()
-    Main.Visible = true
-    Open.Visible = false
-end)
-
---==================================================
--- DRAG SUPPORT
---==================================================
-
-local dragging = false
-local dragStart
-local startPosition
-
-Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-        dragging = true
-        dragStart = input.Position
-        startPosition = Main.Position
-    end
-end)
-
-UIS.InputChanged:Connect(function(input)
-    if dragging and (
-        input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch
-    ) then
-
-        local delta = input.Position - dragStart
-
-        Main.Position = UDim2.new(
-            startPosition.X.Scale,
-            startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale,
-            startPosition.Y.Offset + delta.Y
-        )
-    end
-end)
-
-UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
---==================================================
--- SCROLL MENU
---==================================================
-
-local Scroll = Instance.new("ScrollingFrame")
-Scroll.Position = UDim2.fromOffset(8, 53)
-Scroll.Size = UDim2.new(1, -16, 1, -61)
-Scroll.BackgroundTransparency = 1
-Scroll.BorderSizePixel = 0
-Scroll.ScrollBarThickness = 3
-Scroll.ScrollBarImageColor3 = GREEN
-Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Scroll.CanvasSize = UDim2.new()
-Scroll.Parent = Main
-
-local Layout = Instance.new("UIListLayout")
-Layout.Padding = UDim.new(0, 6)
-Layout.SortOrder = Enum.SortOrder.LayoutOrder
-Layout.Parent = Scroll
-
-local function Section(name)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -4, 0, 28)
-    label.BackgroundTransparency = 1
-    label.Text = "  " .. name
-    label.TextColor3 = GREEN
-    label.TextSize = 13
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = Scroll
-    return label
+-- ============================================================
+-- UTILS
+-- ============================================================
+local function getChar()
+    return LocalPlayer.Character
 end
 
-local function MakeButton(name, callback)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -4, 0, 36)
-    button.BackgroundColor3 = BUTTON
-    button.BorderSizePixel = 0
-    button.Text = name
-    button.TextColor3 = WHITE
-    button.TextSize = 12
-    button.Font = Enum.Font.Gotham
-    button.AutoButtonColor = true
-    button.Parent = Scroll
-
-    Instance.new("UICorner", button).CornerRadius =
-        UDim.new(0, 5)
-
-    button.MouseButton1Click:Connect(callback)
-    return button
-end
-
-local function MakeInput(name, default, callback)
-    local input = Instance.new("TextBox")
-    input.Size = UDim2.new(1, -4, 0, 36)
-    input.BackgroundColor3 = BUTTON
-    input.BorderSizePixel = 0
-    input.Text = tostring(default)
-    input.PlaceholderText = name
-    input.PlaceholderColor3 = Color3.fromRGB(180, 180, 180)
-    input.TextColor3 = WHITE
-    input.TextSize = 12
-    input.Font = Enum.Font.Gotham
-    input.ClearTextOnFocus = false
-    input.Parent = Scroll
-
-    Instance.new("UICorner", input).CornerRadius =
-        UDim.new(0, 5)
-
-    input.FocusLost:Connect(function()
-        local value = tonumber(input.Text)
-
-        if value then
-            callback(value)
-        else
-            input.Text = tostring(default)
-        end
-    end)
-
-    return input
-end
-
-local function MakeToggle(name, key, callback)
-    local button
-
-    button = MakeButton(name .. " : OFF", function()
-        Config[key] = not Config[key]
-
-        button.Text = name .. " : " ..
-            (Config[key] and "ON" or "OFF")
-
-        if callback then
-            callback(Config[key])
-        end
-    end)
-
-    return button
-end
-
---==================================================
--- MOVEMENT
---==================================================
-
-Section("MOVEMENT")
-
-MakeToggle("MULTIPLE JUMP", "MultiJump")
-
-MakeInput("Maximum Jump", Config.MaxJump, function(value)
-    Config.MaxJump = math.clamp(math.floor(value), 1, 20)
-    Config.JumpCount = 0
-end)
-
-MakeInput("Player Speed", Config.WalkSpeed, function(value)
-    Config.WalkSpeed = math.clamp(value, 0, 200)
-
-    local character = Player.Character
-    local humanoid = character and
-        character:FindFirstChildOfClass("Humanoid")
-
-    if humanoid then
-        humanoid.WalkSpeed = Config.WalkSpeed
+local function getHRP()
+    local char = getChar()
+    if char then
+        return char:FindFirstChild("HumanoidRootPart")
     end
-end)
+    return nil
+end
 
---==================================================
--- MULTIPLE JUMP
---==================================================
-
-UIS.JumpRequest:Connect(function()
-    if not Config.MultiJump then return end
-
-    local character = Player.Character
-    local humanoid = character and
-        character:FindFirstChildOfClass("Humanoid")
-
-    if not humanoid then return end
-
-    if Config.JumpCount < Config.MaxJump then
-        Config.JumpCount += 1
-        humanoid:ChangeState(
-            Enum.HumanoidStateType.Jumping
-        )
+local function getHum()
+    local char = getChar()
+    if char then
+        return char:FindFirstChildOfClass("Humanoid")
     end
-end)
+    return nil
+end
 
-local function SetupCharacter(character)
-    local humanoid = character:WaitForChild("Humanoid")
+local function notify(title, text)
+    Rayfield:Notify({
+        Title = title,
+        Content = text,
+        Duration = 3,
+    })
+end
 
-    Config.JumpCount = 0
-    humanoid.WalkSpeed = Config.WalkSpeed
+-- ============================================================
+-- MULTI JUMP
+-- ============================================================
+local function resetJumpCount()
+    State.jumpCount = 0
+end
 
-    humanoid.StateChanged:Connect(function(_, state)
-        if state == Enum.HumanoidStateType.Landed then
-            Config.JumpCount = 0
+local function onJumpRequest()
+    if not State.MultiJumpEnabled then return end
+    local hum = getHum()
+    if not hum or hum:GetState() == Enum.HumanoidStateType.Dead then return end
+    if State.jumpCount < State.MaxJumps then
+        State.jumpCount = State.jumpCount + 1
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end
+
+local function bindMultiJump()
+    local hum = getHum()
+    if not hum then return end
+    hum.StateChanged:Connect(function(old, new)
+        if new == Enum.HumanoidStateType.Landed then
+            resetJumpCount()
         end
     end)
 end
 
-if Player.Character then
-    task.spawn(SetupCharacter, Player.Character)
-end
+UserInputService.JumpRequest:Connect(onJumpRequest)
 
-Player.CharacterAdded:Connect(SetupCharacter)
-
---==================================================
--- FLY
---==================================================
-
-Section("FLY SYSTEM")
-
-local FlyButton = MakeToggle("FLY", "Fly")
-
-MakeInput("Fly Speed", Config.FlySpeed, function(value)
-    Config.FlySpeed = math.clamp(value, 1, 200)
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    resetJumpCount()
+    bindMultiJump()
 end)
 
-local UpButton = MakeToggle("FLY UP", "FlyUp")
-local DownButton = MakeToggle("FLY DOWN", "FlyDown")
-
--- Tombol keyboard:
--- Space = naik
--- LeftControl = turun
-
-local function UpdateKeyboardFly(input, state)
-    if input.KeyCode == Enum.KeyCode.Space then
-        Config.FlyUp = state
-        UpButton.Text = "FLY UP : " .. (state and "ON" or "OFF")
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then
-        Config.FlyDown = state
-        DownButton.Text = "FLY DOWN : " .. (state and "ON" or "OFF")
-    end
+if getChar() then
+    bindMultiJump()
 end
 
-UIS.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    UpdateKeyboardFly(input, true)
-end)
-
-UIS.InputEnded:Connect(function(input)
-    UpdateKeyboardFly(input, false)
-end)
-
-local flyVelocity
-local flyGyro
-local flyAttachment
-
-local function StopFly()
-    if flyVelocity then
-        flyVelocity:Destroy()
-        flyVelocity = nil
+-- ============================================================
+-- FLY (dengan speed sendiri)
+-- ============================================================
+local function stopFly()
+    if State.flyConnection then
+        State.flyConnection:Disconnect()
+        State.flyConnection = nil
     end
-
-    if flyGyro then
-        flyGyro:Destroy()
-        flyGyro = nil
+    if State.flyBodyVelocity then
+        State.flyBodyVelocity:Destroy()
+        State.flyBodyVelocity = nil
     end
-
-    if flyAttachment then
-        flyAttachment:Destroy()
-        flyAttachment = nil
+    if State.flyBodyGyro then
+        State.flyBodyGyro:Destroy()
+        State.flyBodyGyro = nil
     end
+    local hum = getHum()
+    if hum then
+        hum.PlatformStand = false
+    end
+    State.FlyEnabled = false
 end
 
-local function StartFly(root)
-    flyAttachment = Instance.new("Attachment")
-    flyAttachment.Parent = root
+local function startFly()
+    local char = getChar()
+    local hrp = getHRP()
+    local hum = getHum()
+    if not char or not hrp or not hum then return end
 
-    flyVelocity = Instance.new("LinearVelocity")
-    flyVelocity.Attachment0 = flyAttachment
-    flyVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
-    flyVelocity.MaxForce = 1000000
-    flyVelocity.VectorVelocity = Vector3.zero
-    flyVelocity.Parent = root
+    stopFly()
+    State.FlyEnabled = true
 
-    flyGyro = Instance.new("AlignOrientation")
-    flyGyro.Attachment0 = flyAttachment
-    flyGyro.Mode = Enum.OrientationAlignmentMode.OneAttachment
-    flyGyro.MaxTorque = 1000000
-    flyGyro.Responsiveness = 15
-    flyGyro.Parent = root
-end
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
+    State.flyBodyVelocity = bv
 
---==================================================
--- NOCLIP
---==================================================
+    local bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bg.P = 9000
+    bg.D = 500
+    bg.Parent = hrp
+    State.flyBodyGyro = bg
 
-Section("NOCLIP")
+    hum.PlatformStand = true
 
-MakeToggle("NOCLIP", "Noclip")
-
-local function RestoreCollision()
-    for part, oldValue in pairs(OriginalCollision) do
-        if part and part.Parent then
-            part.CanCollide = oldValue
+    State.flyConnection = RunService.RenderStepped:Connect(function()
+        if not State.FlyEnabled then return end
+        local char2 = getChar()
+        local hrp2 = getHRP()
+        local hum2 = getHum()
+        if not char2 or not hrp2 or not hum2 then
+            stopFly()
+            return
         end
-    end
 
-    table.clear(OriginalCollision)
+        bg.CFrame = Camera.CFrame
+
+        local moveDir = hum2.MoveDirection
+        local velocity = Vector3.zero
+
+        if moveDir.Magnitude > 0 then
+            velocity = moveDir.Unit * State.FlySpeed
+        end
+
+        -- naik / turun pakai E / Q
+        if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+            velocity = velocity + Vector3.new(0, State.FlySpeed, 0)
+        elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+            velocity = velocity - Vector3.new(0, State.FlySpeed, 0)
+        end
+
+        bv.Velocity = velocity
+    end)
 end
 
---==================================================
--- ESP
---==================================================
+local function toggleFly(enabled)
+    if enabled then
+        startFly()
+    else
+        stopFly()
+    end
+end
 
-Section("PLAYER ESP")
+-- ============================================================
+-- SPEED
+-- ============================================================
+local function applySpeed()
+    local hum = getHum()
+    if not hum then return end
+    if State.SpeedEnabled then
+        hum.WalkSpeed = State.WalkSpeed
+    else
+        hum.WalkSpeed = State.defaultWalkSpeed
+    end
+end
 
-MakeToggle("GLOW / HIGHLIGHT", "Glow")
-MakeToggle("ESP LINE", "ESPLine")
-MakeToggle("ESP BOX", "ESPBox")
-MakeToggle("ESP NAME", "ESPName")
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    applySpeed()
+end)
 
-local ESPGui = Instance.new("ScreenGui")
-ESPGui.Name = "ByVoidESP"
-ESPGui.IgnoreGuiInset = true
-ESPGui.Parent = Player:WaitForChild("PlayerGui")
+-- ============================================================
+-- ESP (GLOW + LINE + BOX)
+-- ============================================================
+local function createESPForPlayer(player)
+    if player == LocalPlayer then return end
+    if State.espObjects[player] then return end
 
-local function CreateESP(target)
-    if ESPData[target] then return end
-
-    local folder = Instance.new("Folder")
-    folder.Parent = ESPGui
-
-    local line = Instance.new("Frame")
-    line.AnchorPoint = Vector2.new(0.5, 0)
-    line.BackgroundColor3 = GREEN
-    line.BorderSizePixel = 0
-    line.Visible = false
-    line.Parent = folder
-
-    local box = Instance.new("Frame")
-    box.BackgroundTransparency = 1
-    box.BorderSizePixel = 2
-    box.BorderColor3 = GREEN
-    box.Visible = false
-    box.Parent = folder
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.TextColor3 = GREEN
-    label.TextStrokeTransparency = 0
-    label.TextSize = 12
-    label.Font = Enum.Font.GothamBold
-    label.Visible = false
-    label.Parent = folder
-
-    local highlight = Instance.new("Highlight")
-    highlight.FillColor = GREEN
-    highlight.OutlineColor = WHITE
-    highlight.FillTransparency = 0.7
-    highlight.Enabled = false
-    highlight.Parent = workspace
-
-    ESPData[target] = {
-        Folder = folder,
-        Line = line,
-        Box = box,
-        Label = label,
-        Highlight = highlight
+    local obj = {
+        highlight = nil,
+        tracer = nil,
+        boxLines = {},
     }
-end
 
-local function RemoveESP(target)
-    local data = ESPData[target]
-
-    if data then
-        data.Folder:Destroy()
-        data.Highlight:Destroy()
-        ESPData[target] = nil
-    end
-end
-
-local function GetScreenBounds(character)
-    local cf, size = character:GetBoundingBox()
-
-    local corners = {}
-
-    for x = -1, 1, 2 do
-        for y = -1, 1, 2 do
-            for z = -1, 1, 2 do
-                local point = cf:PointToWorldSpace(
-                    Vector3.new(
-                        size.X * x / 2,
-                        size.Y * y / 2,
-                        size.Z * z / 2
-                    )
-                )
-
-                local screen, visible =
-                    Camera:WorldToViewportPoint(point)
-
-                if screen.Z > 0 then
-                    table.insert(corners, Vector2.new(
-                        screen.X,
-                        screen.Y
-                    ))
-                end
-            end
+    -- glow (Highlight)
+    if State.EspGlow then
+        local char = player.Character
+        if char then
+            local hl = Instance.new("Highlight")
+            hl.Name = "OllieESP"
+            hl.FillColor = State.EspColor
+            hl.OutlineColor = State.EspColor
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent = char
+            obj.highlight = hl
         end
     end
 
-    if #corners == 0 then return nil end
-
-    local minX, minY = math.huge, math.huge
-    local maxX, maxY = -math.huge, -math.huge
-
-    for _, point in ipairs(corners) do
-        minX = math.min(minX, point.X)
-        minY = math.min(minY, point.Y)
-        maxX = math.max(maxX, point.X)
-        maxY = math.max(maxY, point.Y)
+    -- line + box pakai Drawing
+    if State.EspLine then
+        local line = Drawing.new("Line")
+        line.Color = State.EspColor
+        line.Thickness = 1.5
+        line.Transparency = 1
+        line.Visible = false
+        obj.tracer = line
     end
 
-    return minX, minY, maxX, maxY
-end
-
---==================================================
--- PLAYER LIST
---==================================================
-
-Section("PLAYER TELEPORT")
-
-local PlayerList = Instance.new("ScrollingFrame")
-PlayerList.Size = UDim2.new(1, -4, 0, 115)
-PlayerList.BackgroundColor3 = BUTTON
-PlayerList.BorderSizePixel = 0
-PlayerList.ScrollBarThickness = 3
-PlayerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
-PlayerList.CanvasSize = UDim2.new()
-PlayerList.Parent = Scroll
-
-Instance.new("UICorner", PlayerList).CornerRadius =
-    UDim.new(0, 5)
-
-local PlayerLayout = Instance.new("UIListLayout")
-PlayerLayout.Padding = UDim.new(0, 3)
-PlayerLayout.Parent = PlayerList
-
-local function RefreshPlayers()
-    for _, child in ipairs(PlayerList:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
+    if State.EspBox then
+        for i = 1, 4 do
+            local l = Drawing.new("Line")
+            l.Color = State.EspColor
+            l.Thickness = 1
+            l.Transparency = 1
+            l.Visible = false
+            table.insert(obj.boxLines, l)
         end
     end
 
-    for _, target in ipairs(Players:GetPlayers()) do
-        if target ~= Player then
-            local button = Instance.new("TextButton")
-            button.Size = UDim2.new(1, -6, 0, 30)
-            button.BackgroundColor3 = Color3.fromRGB(54, 62, 55)
-            button.BorderSizePixel = 0
-            button.TextColor3 = WHITE
-            button.TextSize = 11
-            button.Font = Enum.Font.Gotham
-            button.Text = target.DisplayName .. " (@" ..
-                target.Name .. ")"
-            button.Parent = PlayerList
-
-            button.MouseButton1Click:Connect(function()
-                SelectedPlayer = target
-
-                for _, item in ipairs(PlayerList:GetChildren()) do
-                    if item:IsA("TextButton") then
-                        item.BackgroundColor3 =
-                            Color3.fromRGB(54, 62, 55)
-                    end
-                end
-
-                button.BackgroundColor3 =
-                    Color3.fromRGB(48, 105, 60)
-            end)
-        end
-    end
+    State.espObjects[player] = obj
 end
 
-MakeButton("REFRESH PLAYER LIST", RefreshPlayers)
+local function removeESPForPlayer(player)
+    local obj = State.espObjects[player]
+    if not obj then return end
 
-MakeButton("TELEPORT TO SELECTED", function()
-    if not SelectedPlayer or
-        not SelectedPlayer.Parent then return end
-
-    local character = Player.Character
-    local targetCharacter = SelectedPlayer.Character
-
-    local root = character and
-        character:FindFirstChild("HumanoidRootPart")
-
-    local targetRoot = targetCharacter and
-        targetCharacter:FindFirstChild("HumanoidRootPart")
-
-    if root and targetRoot then
-        character:PivotTo(
-            targetRoot.CFrame * CFrame.new(3, 0, 0)
-        )
+    if obj.highlight then
+        obj.highlight:Destroy()
     end
-end)
-
-RefreshPlayers()
-
-Players.PlayerAdded:Connect(RefreshPlayers)
-
-Players.PlayerRemoving:Connect(function(target)
-    RemoveESP(target)
-
-    if SelectedPlayer == target then
-        SelectedPlayer = nil
+    if obj.tracer then
+        obj.tracer:Remove()
+    end
+    for _, l in ipairs(obj.boxLines) do
+        l:Remove()
     end
 
-    RefreshPlayers()
-end)
+    State.espObjects[player] = nil
+end
 
---==================================================
--- MAIN UPDATE
---==================================================
+local function clearAllESP()
+    for player, _ in pairs(State.espObjects) do
+        removeESPForPlayer(player)
+    end
+    State.espObjects = {}
+end
 
-RunService.Heartbeat:Connect(function()
-    local character = Player.Character
-    local root = character and
-        character:FindFirstChild("HumanoidRootPart")
-
-    local humanoid = character and
-        character:FindFirstChildOfClass("Humanoid")
-
-    if not root or not humanoid then
-        StopFly()
-        RestoreCollision()
+local function updateESP()
+    if not State.EspEnabled then
+        -- sembunyikan semua drawing kalau ESP off
+        for _, obj in pairs(State.espObjects) do
+            if obj.tracer then obj.tracer.Visible = false end
+            for _, l in ipairs(obj.boxLines) do l.Visible = false end
+        end
         return
     end
 
-    -- NOCLIP
-    if Config.Noclip then
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if OriginalCollision[part] == nil then
-                    OriginalCollision[part] = part.CanCollide
-                end
-
-                part.CanCollide = false
-            end
-        end
-    else
-        RestoreCollision()
-    end
-
-    -- FLY
-    if Config.Fly then
-        if not flyVelocity then
-            StartFly(root)
+    for player, obj in pairs(State.espObjects) do
+        local char = player.Character
+        if not char then
+            if obj.tracer then obj.tracer.Visible = false end
+            for _, l in ipairs(obj.boxLines) do l.Visible = false end
+            continue
         end
 
-        local direction = humanoid.MoveDirection
-        local vertical = 0
-
-        if Config.FlyUp then
-            vertical += 1
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        if not hrp or not head then
+            if obj.tracer then obj.tracer.Visible = false end
+            for _, l in ipairs(obj.boxLines) do l.Visible = false end
+            continue
         end
 
-        if Config.FlyDown then
-            vertical -= 1
+        -- update glow color kalau berubah
+        if obj.highlight then
+            obj.highlight.FillColor = State.EspColor
+            obj.highlight.OutlineColor = State.EspColor
+            obj.highlight.Enabled = State.EspGlow
         end
 
-        flyVelocity.VectorVelocity =
-            direction * Config.FlySpeed +
-            Vector3.new(0, vertical * Config.FlySpeed, 0)
-
-        flyGyro.CFrame = Camera.CFrame
-    else
-        StopFly()
-    end
-end)
-
---==================================================
--- ESP UPDATE
---==================================================
-
-RunService.RenderStepped:Connect(function()
-    local viewport = Camera.ViewportSize
-
-    for _, target in ipairs(Players:GetPlayers()) do
-        if target ~= Player then
-            CreateESP(target)
-
-            local data = ESPData[target]
-            local character = target.Character
-            local root = character and
-                character:FindFirstChild("HumanoidRootPart")
-
-            data.Highlight.Adornee = character
-            data.Highlight.Enabled =
-                Config.Glow and character ~= nil
-
-            local bounds = character and GetScreenBounds(character)
-
-            if root and bounds then
-                local minX, minY, maxX, maxY = bounds
-
-                local centerX = (minX + maxX) / 2
-                local centerY = (minY + maxY) / 2
-
-                local _, visible =
-                    Camera:WorldToViewportPoint(root.Position)
-
-                data.Box.Visible = Config.ESPBox and visible
-                data.Line.Visible = Config.ESPLine and visible
-                data.Label.Visible = Config.ESPName and visible
-
-                if visible then
-                    data.Box.Position = UDim2.fromOffset(minX, minY)
-                    data.Box.Size = UDim2.fromOffset(
-                        maxX - minX,
-                        maxY - minY
-                    )
-
-                    local startPoint = Vector2.new(viewport.X / 2, 0)
-                    local endPoint = Vector2.new(centerX, centerY)
-                    local delta = endPoint - startPoint
-
-                    data.Line.Position = UDim2.fromOffset(
-                        startPoint.X,
-                        startPoint.Y
-                    )
-
-                    data.Line.Size = UDim2.fromOffset(
-                        2,
-                        delta.Magnitude
-                    )
-
-                    data.Line.Rotation =
-                        math.deg(math.atan2(delta.Y, delta.X)) - 90
-
-                    local distance = math.floor(
-                        (root.Position - Camera.CFrame.Position).Magnitude
-                    )
-
-                    data.Label.Text = target.Name ..
-                        " | " .. distance .. " studs"
-
-                    data.Label.Position = UDim2.fromOffset(
-                        centerX - 90,
-                        minY - 20
-                    )
-
-                    data.Label.Size = UDim2.fromOffset(180, 18)
+        -- tracer dari bawah layar ke posisi player
+        if obj.tracer then
+            if State.EspLine then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                    obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    obj.tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                    obj.tracer.Visible = true
+                else
+                    obj.tracer.Visible = false
                 end
             else
-                data.Box.Visible = false
-                data.Line.Visible = false
-                data.Label.Visible = false
+                obj.tracer.Visible = false
+            end
+        end
+
+        -- box 2D di sekitar player
+        if #obj.boxLines == 4 then
+            if State.EspBox then
+                local rootPos = hrp.Position
+                local topPos = rootPos + Vector3.new(0, 3, 0)
+                local bottomPos = rootPos - Vector3.new(0, 3, 0)
+
+                local topScreen, topOn = Camera:WorldToViewportPoint(topPos)
+                local bottomScreen, bottomOn = Camera:WorldToViewportPoint(bottomPos)
+
+                if topOn and bottomOn then
+                    local height = math.abs(bottomScreen.Y - topScreen.Y)
+                    local width = height * 0.6
+                    local centerX = (topScreen.X + bottomScreen.X) / 2
+
+                    local tl = Vector2.new(centerX - width/2, topScreen.Y)
+                    local tr = Vector2.new(centerX + width/2, topScreen.Y)
+                    local bl = Vector2.new(centerX - width/2, bottomScreen.Y)
+                    local br = Vector2.new(centerX + width/2, bottomScreen.Y)
+
+                    obj.boxLines[1].From = tl; obj.boxLines[1].To = tr; obj.boxLines[1].Visible = true
+                    obj.boxLines[2].From = tr; obj.boxLines[2].To = br; obj.boxLines[2].Visible = true
+                    obj.boxLines[3].From = br; obj.boxLines[3].To = bl; obj.boxLines[3].Visible = true
+                    obj.boxLines[4].From = bl; obj.boxLines[4].To = tl; obj.boxLines[4].Visible = true
+
+                    for _, l in ipairs(obj.boxLines) do
+                        l.Color = State.EspColor
+                    end
+                else
+                    for _, l in ipairs(obj.boxLines) do l.Visible = false end
+                end
+            else
+                for _, l in ipairs(obj.boxLines) do l.Visible = false end
             end
         end
     end
+end
+
+-- pasang ESP ke semua player yang ada + yang join
+local function setupPlayerESP(player)
+    if player == LocalPlayer then return end
+    createESPForPlayer(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        removeESPForPlayer(player)
+        if State.EspEnabled then
+            createESPForPlayer(player)
+        end
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    setupPlayerESP(p)
+end
+Players.PlayerAdded:Connect(setupPlayerESP)
+Players.PlayerRemoving:Connect(function(p)
+    removeESPForPlayer(p)
 end)
 
-print("ByVoid Mod Menu V2 Loaded")
+RunService.RenderStepped:Connect(updateESP)
+
+-- ============================================================
+-- WALLHACK (nembus semua yang di depan)
+-- ============================================================
+local function applyWallhack()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local char = player.Character
+        if not char then continue end
+
+        local existing = char:FindFirstChild("OllieWallhack")
+        if existing then existing:Destroy() end
+
+        if State.WallhackEnabled then
+            local hl = Instance.new("Highlight")
+            hl.Name = "OllieWallhack"
+            hl.FillColor = Color3.fromRGB(255, 0, 0)
+            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+            hl.FillTransparency = 0.7
+            hl.OutlineTransparency = 0
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent = char
+            State.wallhackHighlights[player] = hl
+        else
+            State.wallhackHighlights[player] = nil
+        end
+    end
+end
+
+local function clearWallhack()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local char = player.Character
+        if char then
+            local hl = char:FindFirstChild("OllieWallhack")
+            if hl then hl:Destroy() end
+        end
+    end
+    State.wallhackHighlights = {}
+end
+
+-- ============================================================
+-- TP KE PLAYER (dengan list nama)
+-- ============================================================
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    return names
+end
+
+local function teleportToPlayer(playerName)
+    local target = Players:FindFirstChild(playerName)
+    if not target then return end
+    local targetChar = target.Character
+    if not targetChar then return end
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    local myHRP = getHRP()
+    if not targetHRP or not myHRP then return end
+    myHRP.CFrame = targetHRP.CFrame + Vector3.new(0, 3, 0)
+end
+
+-- ============================================================
+-- UI (RAYFIELD)
+-- ============================================================
+local Window = Rayfield:CreateWindow({
+    Name = "ollie — mod menu",
+    LoadingTitle = "ollie: oli panas, sabar ya sayang...",
+    LoadingSubtitle = "absolute ollie, built by olivia",
+    ConfigurationSaving = {
+        Enabled = false,
+    },
+    Keybind = Enum.KeyCode.RightShift,
+})
+
+-- TAB: MOVEMENT
+local MoveTab = Window:CreateTab("Movement", 4483362458)
+
+MoveTab:CreateSection("Multi Jump")
+MoveTab:CreateToggle({
+    Name = "Enable Multi Jump",
+    CurrentValue = false,
+    Flag = "MultiJump",
+    Callback = function(v)
+        State.MultiJumpEnabled = v
+        if not v then resetJumpCount() end
+    end,
+})
+MoveTab:CreateSlider({
+    Name = "Max Jumps",
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "x",
+    CurrentValue = 3,
+    Flag = "MaxJumps",
+    Callback = function(v)
+        State.MaxJumps = v
+    end,
+})
+
+MoveTab:CreateSection("Fly")
+MoveTab:CreateToggle({
+    Name = "Enable Fly",
+    CurrentValue = false,
+    Flag = "Fly",
+    Callback = function(v)
+        toggleFly(v)
+    end,
+})
+MoveTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {10, 500},
+    Increment = 10,
+    Suffix = "studs/s",
+    CurrentValue = 100,
+    Flag = "FlySpeed",
+    Callback = function(v)
+        State.FlySpeed = v
+    end,
+})
+MoveTab:CreateParagraph({
+    Title = "Fly Controls",
+    Content = "WASD = gerak, E = naik, Q = turun",
+})
+
+MoveTab:CreateSection("Speed")
+MoveTab:CreateToggle({
+    Name = "Enable Speed",
+    CurrentValue = false,
+    Flag = "Speed",
+    Callback = function(v)
+        State.SpeedEnabled = v
+        applySpeed()
+    end,
+})
+MoveTab:CreateSlider({
+    Name = "Walk Speed",
+    Range = {16, 300},
+    Increment = 1,
+    Suffix = "studs/s",
+    CurrentValue = 50,
+    Flag = "WalkSpeed",
+    Callback = function(v)
+        State.WalkSpeed = v
+        applySpeed()
+    end,
+})
+
+-- TAB: VISUAL
+local VisualTab = Window:CreateTab("Visual", 4483362458)
+
+VisualTab:CreateSection("ESP")
+VisualTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "ESP",
+    Callback = function(v)
+        State.EspEnabled = v
+        if v then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    if not State.espObjects[p] then
+                        createESPForPlayer(p)
+                    end
+                end
+            end
+        else
+            clearAllESP()
+        end
+    end,
+})
+VisualTab:CreateToggle({
+    Name = "ESP Glow",
+    CurrentValue = true,
+    Flag = "ESPGlow",
+    Callback = function(v)
+        State.EspGlow = v
+        for _, obj in pairs(State.espObjects) do
+            if obj.highlight then
+                obj.highlight.Enabled = v and State.EspEnabled
+            end
+        end
+    end,
+})
+VisualTab:CreateToggle({
+    Name = "ESP Line (dari atas)",
+    CurrentValue = true,
+    Flag = "ESPLine",
+    Callback = function(v)
+        State.EspLine = v
+        for _, obj in pairs(State.espObjects) do
+            if obj.tracer then
+                obj.tracer.Visible = false
+            end
+        end
+    end,
+})
+VisualTab:CreateToggle({
+    Name = "ESP Box",
+    CurrentValue = true,
+    Flag = "ESPBox",
+    Callback = function(v)
+        State.EspBox = v
+        for _, obj in pairs(State.espObjects) do
+            for _, l in ipairs(obj.boxLines) do
+                l.Visible = false
+            end
+        end
+    end,
+})
+VisualTab:CreateColorPicker({
+    Name = "ESP Color",
+    Color = Color3.fromRGB(0, 255, 100),
+    Flag = "ESPColor",
+    Callback = function(color)
+        State.EspColor = color
+        for _, obj in pairs(State.espObjects) do
+            if obj.highlight then
+                obj.highlight.FillColor = color
+                obj.highlight.OutlineColor = color
+            end
+            if obj.tracer then
+                obj.tracer.Color = color
+            end
+            for _, l in ipairs(obj.boxLines) do
+                l.Color = color
+            end
+        end
+    end,
+})
+
+VisualTab:CreateSection("Wallhack")
+VisualTab:CreateToggle({
+    Name = "Enable Wallhack (nembus semua)",
+    CurrentValue = false,
+    Flag = "Wallhack",
+    Callback = function(v)
+        State.WallhackEnabled = v
+        if v then
+            applyWallhack()
+        else
+            clearWallhack()
+        end
+    end,
+})
+
+-- update wallhack pas ada player baru / respawn
+Players.PlayerAdded:Connect(function()
+    task.wait(1)
+    if State.WallhackEnabled then applyWallhack() end
+end)
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.2)
+    if State.WallhackEnabled then applyWallhack() end
+end)
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if State.WallhackEnabled then applyWallhack() end
+end)
+
+-- TAB: TELEPORT
+local TpTab = Window:CreateTab("Teleport", 4483362458)
+
+local playerDropdown
+local function refreshPlayerDropdown()
+    if playerDropdown then
+        playerDropdown:Refresh(getPlayerNames())
+    end
+end
+
+playerDropdown = TpTab:CreateDropdown({
+    Name = "Pilih Player",
+    Options = getPlayerNames(),
+    CurrentOption = {},
+    MultipleOptions = false,
+    Flag = "PlayerSelect",
+    Callback = function(option)
+        if option and option[1] then
+            State.SelectedPlayer = option[1]
+        end
+    end,
+})
+
+TpTab:CreateButton({
+    Name = "Refresh List",
+    Callback = function()
+        refreshPlayerDropdown()
+    end,
+})
+
+TpTab:CreateButton({
+    Name = "Teleport ke Player",
+    Callback = function()
+        if not State.SelectedPlayer then
+            notify("ollie", "pilih player dulu, sayang")
+            return
+        end
+        teleportToPlayer(State.SelectedPlayer)
+    end,
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    refreshPlayerDropdown()
+end)
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.5)
+    refreshPlayerDropdown()
+end)
+
+-- ============================================================
+-- CLEANUP SAAT SCRIPT DIMATIKAN / RESPAWN
+-- ============================================================
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    -- reset state fly karena character baru
+    stopFly()
+    -- reset speed
+    applySpeed()
+    -- re-apply wallhack
+    if State.WallhackEnabled then applyWallhack() end
+    -- re-bind multi jump
+    bindMultiJump()
+end)
+
+notify("ollie", "menu udah nyala — right shift buat buka/tutup")
