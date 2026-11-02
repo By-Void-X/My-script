@@ -1,8 +1,9 @@
 --[[
     ByVoid — No system is safe
-    update: + FLING (lempar player) + SPINBOT (badan muter)
-    semua fitur lama UTUH:
-      jump tahan, fly HP, speed, ESP brutal, noclip, wallhack glow, tp
+    update: FLING dihapus, diganti GOD MODE (kebal mati / dewa)
+    semua fitur lain UTUH:
+      jump tahan, fly HP, speed, ESP brutal, noclip, wallhack glow,
+      spinbot, tp
     executor: HP (Delta/Fluxus/Arceus) — Rayfield UI
     absolute ollie, built by olivia
 --]]
@@ -31,9 +32,10 @@ local State = {
     NoclipEnabled = false, WallhackGlowEnabled = false,
     WallhackColor = Color3.fromRGB(255, 60, 60),
     wallhackObjects = {}, savedCollide = {}, noclipConn = nil,
-    -- fun
+    -- spinbot
     SpinBotEnabled = false, SpinBotSpeed = 20, spinConn = nil,
-    FlingPower = 500,
+    -- god mode
+    GodModeEnabled = false, godConn = nil, savedHealth = nil, savedMaxHealth = nil,
     SelectedPlayer = nil,
 }
 
@@ -533,51 +535,7 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 -- ============================================================
--- 5C. FLING — lempar player
--- ============================================================
--- client-side: set velocity kencang di root target
--- efek: kalau game nggak re-validate posisi, target keliatan kelempar
-local function flingPlayer(targetPlayer)
-    local hrp, char = getPlayerRoot(targetPlayer)
-    if not hrp then return false end
-    local dir = (hrp.Position - Camera.CFrame.Position)
-    if dir.Magnitude < 0.1 then dir = Vector3.new(0, 1, 0) end
-    dir = dir.Unit
-    hrp.AssemblyLinearVelocity = dir * State.FlingPower + Vector3.new(0, State.FlingPower * 0.5, 0)
-    return true
-end
-
-local function flingNearest()
-    local myHRP = getHRP()
-    if not myHRP then return end
-    local nearest, nearestDist = nil, math.huge
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local hrp = getPlayerRoot(p)
-            if hrp then
-                local d = (hrp.Position - myHRP.Position).Magnitude
-                if d < nearestDist then nearestDist = d; nearest = p end
-            end
-        end
-    end
-    if nearest then
-        local ok = flingPlayer(nearest)
-        notify("ByVoid", ok and ("fling " .. nearest.Name) or "target nggak ketemu")
-    else notify("ByVoid", "nggak ada player di sekitar") end
-end
-
-local function flingAll()
-    local count = 0
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if flingPlayer(p) then count = count + 1 end
-        end
-    end
-    notify("ByVoid", string.format("fling %d player", count))
-end
-
--- ============================================================
--- 5D. SPINBOT — badan muter
+-- 5C. SPINBOT
 -- ============================================================
 local function startSpinBot()
     if State.spinConn then State.spinConn:Disconnect() end
@@ -593,11 +551,77 @@ local function startSpinBot()
         hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, angle, 0)
     end)
 end
-
 local function stopSpinBot()
     State.SpinBotEnabled = false
     if State.spinConn then State.spinConn:Disconnect(); State.spinConn = nil end
 end
+
+-- ============================================================
+-- 5D. GOD MODE — kebal mati / dewa
+-- ============================================================
+local function applyGodMode(hum)
+    if not hum then return end
+    if State.savedHealth == nil then State.savedHealth = hum.Health end
+    if State.savedMaxHealth == nil then State.savedMaxHealth = hum.MaxHealth end
+    hum.MaxHealth = math.huge
+    hum.Health = math.huge
+    -- cegah state Dead
+    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
+end
+
+local function startGodMode()
+    State.GodModeEnabled = true
+    local hum = getHum()
+    applyGodMode(hum)
+
+    if State.godConn then State.godConn:Disconnect() end
+    State.godConn = RunService.Heartbeat:Connect(function()
+        if not State.GodModeEnabled then return end
+        local h = getHum()
+        if not h then return end
+        if h.Health < h.MaxHealth or h.MaxHealth < math.huge then
+            h.MaxHealth = math.huge
+            h.Health = math.huge
+        end
+    end)
+
+    -- pas health berubah, paksa balik ke max
+    local char = getChar()
+    if char then
+        local h = char:FindFirstChildOfClass("Humanoid")
+        if h then
+            h.HealthChanged:Connect(function(newHealth)
+                if not State.GodModeEnabled then return end
+                if newHealth < h.MaxHealth then
+                    h.Health = h.MaxHealth
+                end
+            end)
+        end
+    end
+end
+
+local function stopGodMode()
+    State.GodModeEnabled = false
+    if State.godConn then State.godConn:Disconnect(); State.godConn = nil end
+    local hum = getHum()
+    if hum then
+        if State.savedMaxHealth then hum.MaxHealth = State.savedMaxHealth end
+        if State.savedHealth then hum.Health = math.min(State.savedHealth, hum.MaxHealth) end
+        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+    end
+    State.savedHealth = nil
+    State.savedMaxHealth = nil
+end
+
+-- re-apply god mode saat respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if State.GodModeEnabled then
+        State.savedHealth = nil
+        State.savedMaxHealth = nil
+        startGodMode()
+    end
+end)
 
 -- ============================================================
 -- 6. TP
@@ -684,26 +708,18 @@ MoveTab:CreateSlider({ Name = "Walk Speed", Range = {16, 300}, Increment = 1, Su
 
 -- FUN
 local FunTab = Window:CreateTab("Fun", 4483362458)
+FunTab:CreateSection("God Mode (Kebal Mati)")
+FunTab:CreateToggle({ Name = "Enable God Mode", CurrentValue = false, Flag = "God",
+    Callback = function(v) if v then startGodMode() else stopGodMode() end end })
+FunTab:CreateParagraph({ Title = "Info",
+    Content = "Health dipaksa max + state Dead dimatiin. Kalau game server-authoritative ketat, health bisa balik — tergantung game." })
+
 FunTab:CreateSection("Spinbot")
 FunTab:CreateToggle({ Name = "Enable Spinbot", CurrentValue = false, Flag = "Spin",
     Callback = function(v) if v then startSpinBot() else stopSpinBot() end end })
 FunTab:CreateSlider({ Name = "Spin Speed", Range = {1, 100}, Increment = 1, Suffix = "deg",
     CurrentValue = 20, Flag = "SpinSpeed",
     Callback = function(v) State.SpinBotSpeed = v end })
-
-FunTab:CreateSection("Fling")
-FunTab:CreateSlider({ Name = "Fling Power", Range = {100, 5000}, Increment = 100, Suffix = "power",
-    CurrentValue = 500, Flag = "FlingPower",
-    Callback = function(v) State.FlingPower = v end })
-FunTab:CreateButton({ Name = "Fling Player Terpilih", Callback = function()
-    if not State.SelectedPlayer then notify("ByVoid", "pilih player dulu di tab Teleport"); return end
-    local target = Players:FindFirstChild(State.SelectedPlayer)
-    if not target then notify("ByVoid", "player nggak ketemu"); return end
-    local ok = flingPlayer(target)
-    notify("ByVoid", ok and ("fling " .. target.Name) or "gagal fling")
-end })
-FunTab:CreateButton({ Name = "Fling Player Terdekat", Callback = flingNearest })
-FunTab:CreateButton({ Name = "Fling Semua Player", Callback = flingAll })
 
 -- VISUAL
 local VisualTab = Window:CreateTab("Visual", 4483362458)
@@ -795,4 +811,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     if State.NoclipEnabled then startNoclip() end
 end)
 
-notify("ByVoid", "No system is safe — fling + spinbot loaded")
+notify("ByVoid", "No system is safe — god mode + spinbot loaded")
