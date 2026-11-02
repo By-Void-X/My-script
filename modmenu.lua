@@ -1,6 +1,6 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Undetectable Noclip)
-  Fitur: Draggable UI, TP, Speed, Super Noclip (Anti-TP), Fly, Jump, Dual ESP
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Stable Noclip & Movement)
+  Fitur: Draggable UI, TP, Speed, Super Noclip, Fly, Multiple Jump, Dual ESP
 ]]
 
 local Players = game:GetService("Players")
@@ -419,7 +419,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- 3. SUPER NOCLIP (UNDETECTABLE & JUMP SAFE)
+-- 3. SUPER NOCLIP (Stabil & Bisa Melompat)
 local noclipSpeed = 2
 CreateSlider("Noclip Push Speed", 1, 5, 2, function(val)
     noclipSpeed = val
@@ -427,30 +427,22 @@ end)
 
 local wallHackActive = false
 local noclipConnection
-local noclipVelocity
 
 CreateToggle("Super Noclip (Anti-TP)", function(state)
     wallHackActive = state
     local char = LocalPlayer.Character
     if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    
-    if wallHackActive and hrp then
-        -- Gunakan BodyVelocity alih-alih CFrame paksa (lebih tidak terdeteksi)
-        noclipVelocity = Instance.new("BodyVelocity")
-        noclipVelocity.Parent = hrp
-        noclipVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        noclipVelocity.Velocity = Vector3.new(0, 0, 0)
 
-        noclipConnection = RunService.RenderStepped:Connect(function()
+    if wallHackActive then
+        noclipConnection = RunService.Heartbeat:Connect(function(deltaTime)
             if not wallHackActive then return end
             local myChar = LocalPlayer.Character
             if myChar then
-                local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+                local hrp = myChar:FindFirstChild("HumanoidRootPart")
                 local humanoid = myChar:FindFirstChild("Humanoid")
                 
-                if myHrp and humanoid then
-                    -- Matikan semua tabrakan & Touch
+                if hrp and humanoid then
+                    -- Matikan tabrakan dan touch
                     for _, part in pairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") then
                             part.CanCollide = false
@@ -459,25 +451,17 @@ CreateToggle("Super Noclip (Anti-TP)", function(state)
                         end
                     end
                     
-                    -- Trik Anti-Cheat: Paksa status lantai jadi Plastik agar tidak dianggap terbang
-                    humanoid.FloorMaterial = Enum.Material.Plastic
-                    
+                    -- Dorongan CFrame normal (stabil dan mulus)
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
-                        -- Bergerak dengan kecepatan normal
-                        noclipVelocity.Velocity = moveDir * currentWalkSpeed
-                    else
-                        -- Jika diam, biarkan gravitasi bekerja (turun perlahan)
-                        noclipVelocity.Velocity = Vector3.new(0, myHrp.Velocity.Y, 0)
+                        local speed = currentWalkSpeed * deltaTime
+                        hrp.CFrame = hrp.CFrame + (moveDir * speed)
                     end
                 end
             end
         end)
     else
         if noclipConnection then noclipConnection:Disconnect() end
-        if noclipVelocity then noclipVelocity:Destroy() end
-        
-        -- Kembalikan tabrakan normal
         local myChar = LocalPlayer.Character
         if myChar then
             for _, part in pairs(myChar:GetDescendants()) do
@@ -499,7 +483,7 @@ end)
 
 local flyActive = false
 local flyConnection
-local flyVelocity
+local bodyVelocity
 CreateToggle("Fly (Geser Kamera)", function(state)
     flyActive = state
     local char = LocalPlayer.Character
@@ -508,22 +492,22 @@ CreateToggle("Fly (Geser Kamera)", function(state)
     if not hrp then return end
 
     if flyActive then
-        flyVelocity = Instance.new("BodyVelocity")
-        flyVelocity.Parent = hrp
-        flyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        flyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Parent = hrp
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
         local camera = workspace.CurrentCamera
         flyConnection = RunService.RenderStepped:Connect(function()
-            if not flyActive or not flyVelocity or not flyVelocity.Parent then return end
+            if not flyActive or not bodyVelocity or not bodyVelocity.Parent then return end
             local moveDir = camera.CFrame.LookVector
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
                 moveDir = moveDir + Vector3.new(0, 1, 0)
             end
-            flyVelocity.Velocity = moveDir * flySpeed
+            bodyVelocity.Velocity = moveDir * flySpeed
         end)
     else
         if flyConnection then flyConnection:Disconnect() end
-        if flyVelocity then flyVelocity:Destroy() end
+        if bodyVelocity then bodyVelocity:Destroy() end
     end
 end)
 
