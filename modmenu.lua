@@ -1,5 +1,5 @@
 --[[
-  FIXTURE_TEMPLATE: Roblox Mod Menu (Stable Noclip & Movement)
+  FIXTURE_TEMPLATE: Roblox Mod Menu (Fixed Noclip Movement)
   Fitur: Draggable UI, TP, Speed, Super Noclip, Fly, Multiple Jump, Dual ESP
 ]]
 
@@ -419,7 +419,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- 3. SUPER NOCLIP (Stabil & Bisa Melompat)
+-- 3. SUPER NOCLIP (Fixed Movement)
 local noclipSpeed = 2
 CreateSlider("Noclip Push Speed", 1, 5, 2, function(val)
     noclipSpeed = val
@@ -451,11 +451,13 @@ CreateToggle("Super Noclip (Anti-TP)", function(state)
                         end
                     end
                     
-                    -- Dorongan CFrame normal (stabil dan mulus)
+                    -- Dorongan CFrame normal
                     local moveDir = humanoid.MoveDirection
                     if moveDir.Magnitude > 0 then
                         local speed = currentWalkSpeed * deltaTime
                         hrp.CFrame = hrp.CFrame + (moveDir * speed)
+                        -- Paksa status Running agar animasi tidak kaku
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
                     end
                 end
             end
